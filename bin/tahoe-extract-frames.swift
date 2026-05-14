@@ -1,21 +1,40 @@
 #!/usr/bin/env swift
-// Extracts a still poster frame from each Tahoe aerial .mov and writes
-// PNGs to ~/Pictures/TahoeWallpapers/. Asset UUIDs are looked up at run
-// time from the system aerial manifest, so this keeps working if Apple
-// republishes the pack with new IDs.
+// Extracts a still poster frame from each phase of an Apple aerial pack
+// and writes PNGs to ~/Pictures/AerialWallpapers/. Asset UUIDs are looked
+// up at run time from the system aerial manifest, so the script keeps
+// working if Apple republishes a pack with new IDs.
+//
+// Usage: tahoe-extract-frames [--pack <Name>]
+//   --pack    Aerial pack name (default: Tahoe). The pack must contain
+//             four assets labelled "<Pack> Morning", "<Pack> Day",
+//             "<Pack> Evening", "<Pack> Night".
 
 import AVFoundation
 import AppKit
 import Foundation
 
+// --- Parse args.
+var pack = "Tahoe"
+var args = Array(CommandLine.arguments.dropFirst())
+while !args.isEmpty {
+    switch args.removeFirst() {
+    case "--pack":
+        guard !args.isEmpty else {
+            FileHandle.standardError.write(Data("--pack requires a value\n".utf8)); exit(2)
+        }
+        pack = args.removeFirst()
+    case let other:
+        FileHandle.standardError.write(Data("unknown argument: \(other)\n".utf8)); exit(2)
+    }
+}
+
 let aerialsDir = ("~/Library/Application Support/com.apple.wallpaper/aerials/videos" as NSString)
     .expandingTildeInPath
 let manifestPath = ("~/Library/Application Support/com.apple.wallpaper/aerials/manifest/entries.json" as NSString)
     .expandingTildeInPath
-let outDir = ("~/Pictures/TahoeWallpapers" as NSString).expandingTildeInPath
+let outDir = ("~/Pictures/AerialWallpapers" as NSString).expandingTildeInPath
 try? FileManager.default.createDirectory(atPath: outDir, withIntermediateDirectories: true)
 
-let pack = "Tahoe"
 let phases = ["Morning", "Day", "Evening", "Night"]
 
 // --- Resolve UUIDs by scanning the aerial manifest for "<Pack> <Phase>" labels.
@@ -23,12 +42,12 @@ struct ResolvedPhase { let phase: String; let uuid: String }
 
 func resolvePhases() throws -> [ResolvedPhase] {
     guard let data = FileManager.default.contents(atPath: manifestPath) else {
-        throw NSError(domain: "tahoe", code: 1, userInfo: [NSLocalizedDescriptionKey:
+        throw NSError(domain: "aerial", code: 1, userInfo: [NSLocalizedDescriptionKey:
             "manifest not found at \(manifestPath) — does this Mac run macOS Tahoe with aerial support?"])
     }
     guard let root = try JSONSerialization.jsonObject(with: data) as? [String: Any],
           let assets = root["assets"] as? [[String: Any]] else {
-        throw NSError(domain: "tahoe", code: 2, userInfo: [NSLocalizedDescriptionKey:
+        throw NSError(domain: "aerial", code: 2, userInfo: [NSLocalizedDescriptionKey:
             "manifest shape unexpected — Apple may have changed the format"])
     }
     var resolved: [ResolvedPhase] = []
@@ -43,8 +62,9 @@ func resolvePhases() throws -> [ResolvedPhase] {
         }
     }
     if !missing.isEmpty {
-        throw NSError(domain: "tahoe", code: 3, userInfo: [NSLocalizedDescriptionKey:
-            "manifest is missing entries for: \(missing.joined(separator: ", "))"])
+        throw NSError(domain: "aerial", code: 3, userInfo: [NSLocalizedDescriptionKey:
+            "pack \"\(pack)\" is missing required phases in the manifest: \(missing.joined(separator: ", "))\n" +
+            "(this pack may not have a four-phase day cycle on this macOS version)"])
     }
     return resolved
 }
@@ -59,14 +79,15 @@ do {
 
 // --- Extract a poster frame for each phase.
 let posterAt = CMTime(seconds: 5.0, preferredTimescale: 600)
+let packLower = pack.lowercased()
 
 for r in resolved {
     let movPath = "\(aerialsDir)/\(r.uuid).mov"
-    let outPath = "\(outDir)/tahoe-\(r.phase).png"
+    let outPath = "\(outDir)/\(packLower)-\(r.phase).png"
 
     guard FileManager.default.fileExists(atPath: movPath) else {
         FileHandle.standardError.write(Data(
-            "skip \(r.phase): not downloaded — open System Settings → Wallpaper and click the cloud-arrow on Tahoe \(r.phase.capitalized)\n".utf8))
+            "skip \(r.phase): not downloaded — open System Settings → Wallpaper and click the cloud-arrow on \(pack) \(r.phase.capitalized)\n".utf8))
         continue
     }
 
@@ -77,10 +98,10 @@ for r in resolved {
     gen.requestedTimeToleranceAfter = .zero
 
     let sem = DispatchSemaphore(value: 0)
-    var result: Result<CGImage, Error> = .failure(NSError(domain: "tahoe", code: -1))
+    var result: Result<CGImage, Error> = .failure(NSError(domain: "aerial", code: -1))
     gen.generateCGImagesAsynchronously(forTimes: [NSValue(time: posterAt)]) { _, image, _, _, error in
         if let image { result = .success(image) }
-        else { result = .failure(error ?? NSError(domain: "tahoe", code: -1)) }
+        else { result = .failure(error ?? NSError(domain: "aerial", code: -1)) }
         sem.signal()
     }
     sem.wait()

@@ -1,21 +1,33 @@
 #!/bin/zsh
-# Re-extracts poster frames from the Tahoe aerial cache, rebuilds the
+# Re-extracts poster frames from the aerial cache, rebuilds the
 # solar-dynamic HEIC, and sets it as the desktop wallpaper. After this
 # runs once, macOS rotates the wallpaper natively based on the sun's
 # position at your current location — no daemon, no cron.
 #
-# Re-run any time you (re)download Tahoe variants in System Settings.
+# Usage: tahoe-install [--pack <Name>]
+#   --pack    Aerial pack name (default: Tahoe). The pack must contain
+#             four phase-named assets ("<Pack> Morning|Day|Evening|Night").
+#
+# Re-run any time you (re)download aerial variants in System Settings.
 
 set -euo pipefail
 
-BIN_DIR="${0:A:h}"
-HEIC="$HOME/Pictures/TahoeWallpapers/Tahoe-Dynamic.heic"
+PACK="Tahoe"
+while (( $# > 0 )); do
+    case $1 in
+        --pack) PACK=$2; shift 2 ;;
+        *) print -u2 "unknown argument: $1"; exit 2 ;;
+    esac
+done
 
-echo "==> extracting poster frames from aerial cache"
-"$BIN_DIR/tahoe-extract-frames.swift"
+BIN_DIR="${0:A:h}"
+HEIC="$HOME/Pictures/AerialWallpapers/${PACK}-Dynamic.heic"
+
+echo "==> extracting poster frames from aerial cache (pack: $PACK)"
+"$BIN_DIR/tahoe-extract-frames.swift" --pack "$PACK"
 
 echo "==> building solar-dynamic HEIC"
-"$BIN_DIR/tahoe-build-dynamic.swift"
+"$BIN_DIR/tahoe-build-dynamic.swift" --pack "$PACK"
 
 echo "==> setting as desktop wallpaper"
 /usr/bin/osascript -e \

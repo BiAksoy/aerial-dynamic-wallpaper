@@ -1,25 +1,42 @@
 #!/usr/bin/env swift
-// Builds a solar-dynamic HEIC from the four Tahoe poster frames in
-// ~/Pictures/TahoeWallpapers/. macOS reads the embedded apple_desktop:solar
-// metadata and picks the right image based on the current sun position
-// (computed from Location Services), so the wallpaper rotates natively
-// and adapts when you travel.
+// Builds a solar-dynamic HEIC from the four poster frames of an aerial pack
+// in ~/Pictures/AerialWallpapers/. macOS reads the embedded
+// apple_desktop:solar metadata and picks the right image based on the
+// current sun position (computed from Location Services), so the wallpaper
+// rotates natively and adapts when you travel.
+//
+// Usage: tahoe-build-dynamic [--pack <Name>]
+//   --pack    Aerial pack name (default: Tahoe). Reads
+//             "<pack-lower>-{morning,day,evening,night}.png" and writes
+//             "<Pack>-Dynamic.heic" in ~/Pictures/AerialWallpapers/.
 
 import AppKit
 import Foundation
 import ImageIO
 import UniformTypeIdentifiers
 
-let dir = ("~/Pictures/TahoeWallpapers" as NSString).expandingTildeInPath
-let outFile = "\(dir)/Tahoe-Dynamic.heic"
+// --- Parse args.
+var pack = "Tahoe"
+var args = Array(CommandLine.arguments.dropFirst())
+while !args.isEmpty {
+    switch args.removeFirst() {
+    case "--pack":
+        guard !args.isEmpty else {
+            FileHandle.standardError.write(Data("--pack requires a value\n".utf8)); exit(2)
+        }
+        pack = args.removeFirst()
+    case let other:
+        FileHandle.standardError.write(Data("unknown argument: \(other)\n".utf8)); exit(2)
+    }
+}
 
-// Source frames, in display order. Indices below reference these positions.
-let sources: [(phase: String, file: String)] = [
-    ("morning", "tahoe-morning.png"),  // 0
-    ("day",     "tahoe-day.png"),      // 1
-    ("evening", "tahoe-evening.png"),  // 2
-    ("night",   "tahoe-night.png"),    // 3
-]
+let dir = ("~/Pictures/AerialWallpapers" as NSString).expandingTildeInPath
+try? FileManager.default.createDirectory(atPath: dir, withIntermediateDirectories: true)
+
+let packLower = pack.lowercased()
+let phases = ["Morning", "Day", "Evening", "Night"]
+let sourcePaths = phases.map { "\(dir)/\(packLower)-\($0.lowercased()).png" }
+let outFile = "\(dir)/\(pack)-Dynamic.heic"
 
 // Solar anchors: (altitude°, azimuth°, image index).
 // macOS picks the entry whose (alt, az) is nearest the current sun position.
@@ -38,11 +55,10 @@ let solar: [[String: Any]] = [
 
 // --- Load all four source images, error out cleanly if any are missing.
 var images: [CGImage] = []
-var missing: [String] = []
-for src in sources {
-    let path = "\(dir)/\(src.file)"
+var missingPhases: [String] = []
+for (path, phase) in zip(sourcePaths, phases) {
     guard FileManager.default.fileExists(atPath: path) else {
-        missing.append(src.phase); continue
+        missingPhases.append(phase); continue
     }
     guard let isrc = CGImageSourceCreateWithURL(URL(fileURLWithPath: path) as CFURL, nil),
           let img = CGImageSourceCreateImageAtIndex(isrc, 0, nil) else {
@@ -50,13 +66,14 @@ for src in sources {
     }
     images.append(img)
 }
-if !missing.isEmpty {
-    let names = missing.map { "Tahoe \($0.capitalized)" }.joined(separator: ", ")
+if !missingPhases.isEmpty {
+    let names = missingPhases.map { "\(pack) \($0)" }.joined(separator: ", ")
+    let installCmd = pack == "Tahoe" ? "tahoe-install" : "tahoe-install --pack \(pack)"
     FileHandle.standardError.write(Data("""
-        missing source frames for: \(missing.joined(separator: ", "))
+        missing source frames for: \(missingPhases.joined(separator: ", "))
 
         Open System Settings → Wallpaper, click the cloud-arrow icon to download
-        \(names), then re-run:  tahoe-install
+        \(names), then re-run:  \(installCmd)
 
         """.utf8))
     exit(1)

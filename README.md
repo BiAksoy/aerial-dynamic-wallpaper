@@ -26,18 +26,25 @@ the timing follows you when you travel.
 
 ## How it works
 
-1. `tahoe-extract-frames.swift` finds the four Tahoe aerial `.mov` files
-   that macOS has cached under
+1. `tahoe-extract-frames.swift` finds the four aerial `.mov` files that
+   macOS has cached under
    `~/Library/Application Support/com.apple.wallpaper/aerials/videos/`,
-   and writes a poster PNG for each into `~/Pictures/TahoeWallpapers/`.
+   resolving the asset UUIDs by name from the live aerial manifest, and
+   writes a poster PNG for each into `~/Pictures/AerialWallpapers/`.
 
 2. `tahoe-build-dynamic.swift` packs the four PNGs into a single HEIC at
-   `~/Pictures/TahoeWallpapers/Tahoe-Dynamic.heic`. It attaches an
+   `~/Pictures/AerialWallpapers/<Pack>-Dynamic.heic`. It attaches an
    `apple_desktop:solar` metadata block — a base64-encoded plist mapping
-   each frame to representative sun (altitude, azimuth) anchors.
+   each frame to representative sun (altitude, azimuth) anchors and
+   light/dark appearance fallbacks.
 
 3. `tahoe-install` chains the two and then sets the HEIC as the desktop
    wallpaper via AppleScript. macOS handles the rotation from there.
+
+The default pack is **Tahoe** (the only Apple aerial pack that currently
+ships all four Morning/Day/Evening/Night phases). All scripts accept
+`--pack <Name>` so future packs that follow the same naming convention
+will work without code changes.
 
 ## Install
 
@@ -75,11 +82,22 @@ To confirm the generated HEIC carries the right metadata:
 
 ```sh
 ~/development/tahoe-dynamic-wallpaper/bin/tahoe-inspect \
-    ~/Pictures/TahoeWallpapers/Tahoe-Dynamic.heic
+    ~/Pictures/AerialWallpapers/Tahoe-Dynamic.heic
 ```
 
 It prints the frame count and dimensions, the light/dark appearance
 mapping, and the full solar (altitude, azimuth → frame) table.
+
+### Other aerial packs
+
+```sh
+~/development/tahoe-dynamic-wallpaper/bin/tahoe-install --pack Sequoia
+```
+
+The `--pack` flag works with any Apple aerial pack whose assets are
+labelled `<Pack> Morning`, `<Pack> Day`, `<Pack> Evening`, `<Pack> Night`.
+As of macOS Tahoe, only the **Tahoe** pack ships all four phases — the
+flag is forward-looking for future macOS releases.
 
 ## Re-running
 
@@ -123,7 +141,7 @@ won't line up as precisely.
 ```sh
 # Restore an Apple wallpaper from System Settings → Wallpaper.
 # Then delete the generated files:
-rm -rf ~/Pictures/TahoeWallpapers
+rm -rf ~/Pictures/AerialWallpapers
 rm -rf ~/development/tahoe-dynamic-wallpaper
 ```
 
