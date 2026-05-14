@@ -1,0 +1,35 @@
+#!/bin/zsh
+# Re-extracts poster frames from the Tahoe aerial cache, rebuilds the
+# solar-dynamic HEIC, and sets it as the desktop wallpaper. After this
+# runs once, macOS rotates the wallpaper natively based on the sun's
+# position at your current location — no daemon, no cron.
+#
+# Re-run any time you (re)download Tahoe variants in System Settings.
+
+set -euo pipefail
+
+BIN_DIR="${0:A:h}"
+HEIC="$HOME/Pictures/TahoeWallpapers/Tahoe-Dynamic.heic"
+
+echo "==> extracting poster frames from aerial cache"
+"$BIN_DIR/tahoe-extract-frames.swift"
+
+echo "==> building solar-dynamic HEIC"
+"$BIN_DIR/tahoe-build-dynamic.swift"
+
+echo "==> setting as desktop wallpaper"
+/usr/bin/osascript -e \
+    "tell application \"System Events\" to tell every desktop to set picture to \"$HEIC\""
+
+cat <<EOF
+
+Done. macOS will now rotate the wallpaper based on the sun's altitude/azimuth
+at your current location.
+
+For travel-aware behavior, ensure Location Services is enabled:
+  System Settings → Privacy & Security → Location Services → ON
+  …→ System Services (bottom) → "Setting Time Zone": ON
+
+If location is off, macOS falls back to the time zone's representative location
+— still works, just less precise than Wi-Fi geolocation.
+EOF

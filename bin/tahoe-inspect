@@ -1,0 +1,66 @@
+#!/usr/bin/env swift
+// Decodes a solar-dynamic HEIC and prints what's inside it: frame count,
+// per-frame dimensions, the appearance (light/dark) block, and the full
+// solar (altitude, azimuth → image index) table. Use this to confirm a
+// build worked, or to debug why macOS picked the wrong frame.
+//
+// Usage: tahoe-inspect <path-to-heic>
+
+import Foundation
+import ImageIO
+
+guard CommandLine.arguments.count == 2 else {
+    FileHandle.standardError.write(Data("usage: tahoe-inspect <path.heic>\n".utf8))
+    exit(2)
+}
+let path = CommandLine.arguments[1]
+guard FileManager.default.fileExists(atPath: path) else {
+    FileHandle.standardError.write(Data("not found: \(path)\n".utf8))
+    exit(1)
+}
+
+let url = URL(fileURLWithPath: path)
+guard let src = CGImageSourceCreateWithURL(url as CFURL, nil) else {
+    FileHandle.standardError.write(Data("cannot read as image: \(path)\n".utf8))
+    exit(1)
+}
+let count = CGImageSourceGetCount(src)
+print("file:   \(path)")
+print("frames: \(count)")
+for i in 0..<count {
+    if let props = CGImageSourceCopyPropertiesAtIndex(src, i, nil) as? [CFString: Any] {
+        let w = props[kCGImagePropertyPixelWidth] as? Int ?? -1
+        let h = props[kCGImagePropertyPixelHeight] as? Int ?? -1
+        print("        [\(i)] \(w)×\(h)")
+    }
+}
+
+guard let md = CGImageSourceCopyMetadataAtIndex(src, 0, nil),
+      let tag = CGImageMetadataCopyTagWithPath(md, nil, "apple_desktop:solar" as CFString),
+      let value = CGImageMetadataTagCopyValue(tag) as? String,
+      let plistData = Data(base64Encoded: value),
+      let plist = try? PropertyListSerialization.propertyList(from: plistData, format: nil) as? [String: Any]
+else {
+    print("no apple_desktop:solar metadata — this is not a dynamic wallpaper")
+    exit(1)
+}
+
+if let ap = plist["ap"] as? [String: Int] {
+    let l = ap["l"].map(String.init) ?? "—"
+    let d = ap["d"].map(String.init) ?? "—"
+    print("appear: light → frame \(l), dark → frame \(d)")
+} else {
+    print("appear: (no ap block)")
+}
+
+if let si = plist["si"] as? [[String: Any]] {
+    print("solar:  \(si.count) anchors  (alt°, az°  →  frame)")
+    for entry in si {
+        let a = (entry["a"] as? NSNumber)?.doubleValue ?? .nan
+        let z = (entry["z"] as? NSNumber)?.doubleValue ?? .nan
+        let i = (entry["i"] as? NSNumber)?.intValue ?? -1
+        print(String(format: "        a=%6.1f  z=%6.1f  →  %d", a, z, i))
+    }
+} else {
+    print("solar:  (no si block)")
+}
