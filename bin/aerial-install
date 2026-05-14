@@ -4,7 +4,7 @@
 # runs once, macOS rotates the wallpaper natively based on the sun's
 # position at your current location — no daemon, no cron.
 #
-# Usage: tahoe-install [--pack <Name>]
+# Usage: aerial-install [--pack <Name>]
 #   --pack    Aerial pack name (default: Tahoe). The pack must contain
 #             four phase-named assets ("<Pack> Morning|Day|Evening|Night").
 #
@@ -24,10 +24,10 @@ BIN_DIR="${0:A:h}"
 HEIC="$HOME/Pictures/AerialWallpapers/${PACK}-Dynamic.heic"
 
 echo "==> extracting poster frames from aerial cache (pack: $PACK)"
-"$BIN_DIR/tahoe-extract-frames.swift" --pack "$PACK"
+"$BIN_DIR/aerial-extract-frames.swift" --pack "$PACK"
 
 echo "==> building solar-dynamic HEIC"
-"$BIN_DIR/tahoe-build-dynamic.swift" --pack "$PACK"
+"$BIN_DIR/aerial-build-dynamic.swift" --pack "$PACK"
 
 echo "==> setting as desktop wallpaper"
 /usr/bin/osascript -e \

@@ -4,7 +4,7 @@
 // up at run time from the system aerial manifest, so the script keeps
 // working if Apple republishes a pack with new IDs.
 //
-// Usage: tahoe-extract-frames [--pack <Name>]
+// Usage: aerial-extract-frames [--pack <Name>]
 //   --pack    Aerial pack name (default: Tahoe). The pack must contain
 //             four assets labelled "<Pack> Morning", "<Pack> Day",
 //             "<Pack> Evening", "<Pack> Night".

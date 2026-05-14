@@ -4,13 +4,13 @@
 // solar (altitude, azimuth → image index) table. Use this to confirm a
 // build worked, or to debug why macOS picked the wrong frame.
 //
-// Usage: tahoe-inspect <path-to-heic>
+// Usage: aerial-inspect <path-to-heic>
 
 import Foundation
 import ImageIO
 
 guard CommandLine.arguments.count == 2 else {
-    FileHandle.standardError.write(Data("usage: tahoe-inspect <path.heic>\n".utf8))
+    FileHandle.standardError.write(Data("usage: aerial-inspect <path.heic>\n".utf8))
     exit(2)
 }
 let path = CommandLine.arguments[1]

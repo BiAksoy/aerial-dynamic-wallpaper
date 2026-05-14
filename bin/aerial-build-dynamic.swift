@@ -6,12 +6,12 @@
 //
 // Two modes:
 //
-//   tahoe-build-dynamic [--pack <Name>]
+//   aerial-build-dynamic [--pack <Name>]
 //       Reads four pack PNGs from ~/Pictures/AerialWallpapers/
 //       ("<pack-lower>-{morning,day,evening,night}.png") and writes
 //       "<Pack>-Dynamic.heic" alongside them. Default pack is Tahoe.
 //
-//   tahoe-build-dynamic --images <morning> <day> <evening> <night> [--out <path>]
+//   aerial-build-dynamic --images <morning> <day> <evening> <night> [--out <path>]
 //       Builds a HEIC from any four images. Output defaults to
 //       ~/Pictures/AerialWallpapers/Custom-Dynamic.heic.
 
@@ -98,7 +98,7 @@ if !missingIdx.isEmpty {
     } else {
         let missingPhases = missingIdx.map { phases[$0] }
         let names = missingPhases.map { "\(pack) \($0)" }.joined(separator: ", ")
-        let installCmd = pack == "Tahoe" ? "tahoe-install" : "tahoe-install --pack \(pack)"
+        let installCmd = pack == "Tahoe" ? "aerial-install" : "aerial-install --pack \(pack)"
         FileHandle.standardError.write(Data("""
             missing source frames for: \(missingPhases.joined(separator: ", "))
 
