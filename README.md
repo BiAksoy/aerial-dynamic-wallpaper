@@ -1,5 +1,7 @@
 # Aerial Dynamic Wallpaper
 
+![Tahoe aerial wallpapers — morning, day, evening, night](docs/hero.jpg)
+
 A small toolchain for macOS Tahoe that turns Apple's separate aerial
 wallpapers (Morning / Day / Evening / Night) — or any four images you
 provide — into a single **solar-dynamic HEIC** that macOS rotates
