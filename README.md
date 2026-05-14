@@ -99,6 +99,30 @@ labelled `<Pack> Morning`, `<Pack> Day`, `<Pack> Evening`, `<Pack> Night`.
 As of macOS Tahoe, only the **Tahoe** pack ships all four phases — the
 flag is forward-looking for future macOS releases.
 
+### Bring your own images
+
+`tahoe-build-dynamic` also works as a standalone HEIC builder for any
+four images you supply — they don't have to come from an Apple aerial
+pack:
+
+```sh
+~/development/tahoe-dynamic-wallpaper/bin/tahoe-build-dynamic.swift \
+    --images morning.png day.png evening.png night.png \
+    --out my-wallpaper.heic
+```
+
+Then set it as your wallpaper through System Settings or:
+
+```sh
+osascript -e \
+    'tell application "System Events" to tell every desktop to set picture to "'"$PWD/my-wallpaper.heic"'"'
+```
+
+For best results use four photos of the same scene at sunrise, midday,
+sunset, and night. Same dimensions across all four. The solar anchor
+table at the top of `bin/tahoe-build-dynamic.swift` controls how each
+frame maps to sun positions — tune it if you want to bias a phase.
+
 ## Re-running
 
 Re-run `tahoe-install` whenever you:
