@@ -1,7 +1,8 @@
 #!/usr/bin/env swift
-// Decodes a solar-dynamic HEIC and prints what's inside it: frame count,
+// Decodes a dynamic HEIC and prints what's inside it: frame count,
 // per-frame dimensions, the appearance (light/dark) block, and the full
-// solar (altitude, azimuth → image index) table. Use this to confirm a
+// solar (altitude, azimuth → image index) table, or the clock table of a
+// HEIC built with --mode time. Use this to confirm a
 // build worked, or to debug why macOS picked the wrong frame.
 //
 // Usage: aerial-inspect <path-to-heic> [--timeline <lat>,<lon>] [--date YYYY-MM-DD]
@@ -65,13 +66,15 @@ for i in 0..<count {
     }
 }
 
-guard let md = CGImageSourceCopyMetadataAtIndex(src, 0, nil),
-      let tag = CGImageMetadataCopyTagWithPath(md, nil, "apple_desktop:solar" as CFString),
-      let value = CGImageMetadataTagCopyValue(tag) as? String,
-      let plistData = Data(base64Encoded: value),
-      let plist = try? PropertyListSerialization.propertyList(from: plistData, format: nil) as? [String: Any]
-else {
-    print("no apple_desktop:solar metadata — this is not a dynamic wallpaper")
+func desktopTag(_ name: String) -> [String: Any]? {
+    guard let md = CGImageSourceCopyMetadataAtIndex(src, 0, nil),
+          let tag = CGImageMetadataCopyTagWithPath(md, nil, "apple_desktop:\(name)" as CFString),
+          let value = CGImageMetadataTagCopyValue(tag) as? String,
+          let plistData = Data(base64Encoded: value) else { return nil }
+    return try? PropertyListSerialization.propertyList(from: plistData, format: nil) as? [String: Any]
+}
+guard let plist = desktopTag("solar") ?? desktopTag("h24") else {
+    print("no apple_desktop:solar or apple_desktop:h24 metadata — this is not a dynamic wallpaper")
     exit(1)
 }
 
@@ -93,6 +96,13 @@ if let si = plist["si"] as? [[String: Any]] {
         let i = (entry["i"] as? NSNumber)?.intValue ?? -1
         print(String(format: "        a=%6.1f  z=%6.1f  →  %d", a, z, i))
         anchors.append(Anchor(altitude: a, azimuth: z, frame: i))
+    }
+} else if let ti = plist["ti"] as? [[String: Any]] {
+    print("clock:  \(ti.count) entries  (local time  →  frame)")
+    for entry in ti.sorted(by: { (($0["t"] as? NSNumber)?.doubleValue ?? 0) < (($1["t"] as? NSNumber)?.doubleValue ?? 0) }) {
+        let minutes = Int((((entry["t"] as? NSNumber)?.doubleValue ?? 0) * 1440).rounded())
+        let i = (entry["i"] as? NSNumber)?.intValue ?? -1
+        print(String(format: "        %02d:%02d  →  %d", minutes / 60, minutes % 60, i))
     }
 } else {
     print("solar:  (no si block)")

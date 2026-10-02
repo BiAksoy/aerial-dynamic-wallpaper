@@ -205,6 +205,29 @@ picks a frame and how that was measured.
 The `--images` mode uses a fixed four-frame schedule defined near the top
 of `bin/aerial-build-dynamic.swift`.
 
+### Fixed clock times
+
+```sh
+bin/aerial-install --mode time
+```
+
+With `--mode time` the HEIC carries a clock table (`apple_desktop:h24`)
+instead of a solar one, and macOS switches frames at fixed local times,
+still without a background process. The times come from the pack's
+`clock` schedule in `scenes.json`:
+
+```json
+"clock": ["night", "06:00", "day", "17:00", "sunset", "19:00", "evening", "21:00", "night"]
+```
+
+It reads like the solar schedules: frames in order, with the time each
+one hands over to the next. The list starts and ends with the frame that
+is shown across midnight. `--mode time` also works with `--images`
+(06:00 morning, 11:00 day, 17:00 evening, 21:00 night).
+
+The clock mode comes from
+[rainhuang0220's fork](https://github.com/rainhuang0220/aerial-dynamic-wallpaper).
+
 ## Uninstall
 
 ```sh
@@ -238,5 +261,5 @@ aerial-dynamic-wallpaper/
   more detail; this project bakes a minimal version of it directly.
 - Aerial asset UUIDs and shot IDs are read from
   `~/Library/Application Support/com.apple.wallpaper/aerials/manifest/entries.json`.
-- The Sequoia mapping follows
+- The Sequoia mapping and the clock mode follow
   [rainhuang0220's fork](https://github.com/rainhuang0220/aerial-dynamic-wallpaper).

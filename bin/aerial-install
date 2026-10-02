@@ -4,17 +4,21 @@
 # runs once, macOS rotates the wallpaper natively based on the sun's
 # position at your current location — no daemon, no cron.
 #
-# Usage: aerial-install [--pack <Name>]
+# Usage: aerial-install [--pack <Name>] [--mode solar|time]
 #   --pack    Pack name from scenes.json (e.g. "Golden Gate", Tahoe,
 #             Sequoia). Default: the newest pack in scenes.json that this
 #             Mac's aerial manifest contains.
+#   --mode    solar (default) follows the sun. time switches frames at
+#             the pack's fixed clock times instead.
 
 set -euo pipefail
 
 PACK=""
+MODE="solar"
 while (( $# > 0 )); do
     case $1 in
         --pack) PACK=$2; shift 2 ;;
+        --mode) MODE=$2; shift 2 ;;
         *) print -u2 "unknown argument: $1"; exit 2 ;;
     esac
 done
@@ -26,12 +30,22 @@ HEIC="$HOME/Pictures/AerialWallpapers/${PACK// /}-Dynamic.heic"
 echo "==> extracting poster frames (pack: $PACK)"
 "$BIN_DIR/aerial-extract-frames.swift" --pack "$PACK"
 
-echo "==> building solar-dynamic HEIC"
-"$BIN_DIR/aerial-build-dynamic.swift" --pack "$PACK"
+echo "==> building ${MODE}-dynamic HEIC"
+"$BIN_DIR/aerial-build-dynamic.swift" --pack "$PACK" --mode "$MODE"
 
 echo "==> setting as desktop wallpaper"
 /usr/bin/osascript -e \
     "tell application \"System Events\" to tell every desktop to set picture to \"$HEIC\""
+
+if [[ $MODE == time ]]; then
+    cat <<EOF
+
+Done. macOS will now switch frames at the pack's clock times in
+scenes.json, in local time. Check them with:
+  $BIN_DIR/aerial-inspect "$HEIC"
+EOF
+    exit 0
+fi
 
 cat <<EOF
 

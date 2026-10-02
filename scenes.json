@@ -9,6 +9,7 @@
     },
     "rising": ["night", -3, "day"],
     "setting": ["day", 10, "sunset", -1, "evening", -9, "night"],
+    "clock": ["night", "06:00", "day", "17:00", "sunset", "19:00", "evening", "21:00", "night"],
     "light": "day",
     "dark": "night"
   },
@@ -22,6 +23,7 @@
     },
     "rising": ["night", -7, "morning", 10, "day"],
     "setting": ["day", 3, "evening", -9, "night"],
+    "clock": ["night", "06:00", "morning", "11:00", "day", "17:00", "evening", "21:00", "night"],
     "light": "day",
     "dark": "night"
   },
@@ -34,6 +36,7 @@
     },
     "rising": ["night", -7, "sunrise", 10, "morning"],
     "setting": ["morning", -3, "night"],
+    "clock": ["night", "06:00", "sunrise", "11:00", "morning", "21:00", "night"],
     "light": "morning",
     "dark": "night"
   }

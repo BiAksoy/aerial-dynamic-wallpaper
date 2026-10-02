@@ -1,19 +1,21 @@
 #!/usr/bin/env swift
-// Builds a solar-dynamic HEIC. macOS reads the embedded
+// Builds a dynamic HEIC. By default it is solar: macOS reads the embedded
 // apple_desktop:solar metadata and picks the right image based on the
 // current sun position (computed from Location Services), so the
-// wallpaper rotates natively and adapts when you travel.
+// wallpaper rotates natively and adapts when you travel. With
+// --mode time it embeds apple_desktop:h24 instead and macOS switches
+// frames at fixed local clock times.
 //
-// Two modes:
+// Two sources:
 //
-//   aerial-build-dynamic [--pack <Name>]
+//   aerial-build-dynamic [--pack <Name>] [--mode solar|time]
 //       Reads the pack's frames from ~/Pictures/AerialWallpapers/
 //       ("<pack>-<frame>.png", as written by aerial-extract-frames) and
 //       writes "<Pack>-Dynamic.heic" alongside them. The pack's frames
 //       and schedule come from ../scenes.json. Default: the first pack
 //       in scenes.json whose frames are all on disk.
 //
-//   aerial-build-dynamic --images <morning> <day> <evening> <night> [--out <path>]
+//   aerial-build-dynamic --images <morning> <day> <evening> <night> [--out <path>] [--mode solar|time]
 //       Builds a HEIC from any four images. Output defaults to
 //       ~/Pictures/AerialWallpapers/Custom-Dynamic.heic.
 
@@ -30,6 +32,7 @@ func fail(_ message: String, code: Int32 = 1) -> Never {
 var requestedPack: String? = nil
 var customImages: [String] = []
 var outOverride: String? = nil
+var mode = "solar"
 var args = Array(CommandLine.arguments.dropFirst())
 while !args.isEmpty {
     switch args.removeFirst() {
@@ -43,6 +46,10 @@ while !args.isEmpty {
     case "--out":
         guard !args.isEmpty else { fail("--out requires a value", code: 2) }
         outOverride = args.removeFirst()
+    case "--mode":
+        guard !args.isEmpty else { fail("--mode requires solar or time", code: 2) }
+        mode = args.removeFirst()
+        guard mode == "solar" || mode == "time" else { fail("unknown --mode \(mode) (use solar or time)", code: 2) }
     case let other:
         fail("unknown argument: \(other)", code: 2)
     }
@@ -51,16 +58,18 @@ while !args.isEmpty {
 let dir = ("~/Pictures/AerialWallpapers" as NSString).expandingTildeInPath
 try? FileManager.default.createDirectory(atPath: dir, withIntermediateDirectories: true)
 
-// --- A scene is a set of named frames plus the schedule that maps them
-// to the sun. A schedule lists frames in the order they appear, with the
-// sun altitude (degrees) of each switch between them: "rising" covers
-// solar midnight → noon, "setting" covers noon → midnight.
+// --- A scene is a set of named frames plus the schedules that say when
+// each is shown. A schedule lists frames in the order they appear, with
+// the point of each switch between them. For the sun that point is its
+// altitude (degrees): "rising" covers solar midnight → noon, "setting"
+// covers noon → midnight. For "clock" it is minutes after local midnight.
 struct Schedule { let frames: [String]; let thresholds: [Double] }
 struct Scene {
     let name: String
     let frames: [String: String]   // frame name → image path
     let rising: Schedule
     let setting: Schedule
+    let clock: Schedule?
     let light: String
     let dark: String
 }
@@ -85,6 +94,26 @@ func parseSchedule(_ raw: Any?, _ key: String, ascending: Bool) -> Schedule {
     return Schedule(frames: frames, thresholds: thresholds)
 }
 
+func parseClock(_ raw: Any?, _ key: String) -> Schedule? {
+    guard let raw else { return nil }
+    guard let items = raw as? [String], items.count % 2 == 1, items.count >= 3 else {
+        fail("\(key) must alternate frame names and HH:MM times, starting and ending with a frame")
+    }
+    var frames: [String] = []
+    var minutes: [Double] = []
+    for (i, item) in items.enumerated() {
+        if i % 2 == 0 { frames.append(item); continue }
+        let parts = item.split(separator: ":").map { Int($0) }
+        guard parts.count == 2, let h = parts[0], let m = parts[1], (0...23).contains(h), (0...59).contains(m) else {
+            fail("\(key): \(item) is not an HH:MM time")
+        }
+        minutes.append(Double(h * 60 + m))
+    }
+    guard zip(minutes, minutes.dropFirst()).allSatisfy({ $0 < $1 }) else { fail("\(key) times must increase") }
+    guard frames.first == frames.last else { fail("\(key) must start and end with the frame shown across midnight") }
+    return Schedule(frames: frames, thresholds: minutes)
+}
+
 let scene: Scene
 let outFile: String
 if !customImages.isEmpty {
@@ -93,6 +122,7 @@ if !customImages.isEmpty {
         frames: Dictionary(uniqueKeysWithValues: zip(["morning", "day", "evening", "night"], customImages)),
         rising: Schedule(frames: ["night", "morning", "day"], thresholds: [-7, 10]),
         setting: Schedule(frames: ["day", "evening", "night"], thresholds: [3, -9]),
+        clock: Schedule(frames: ["night", "morning", "day", "evening", "night"], thresholds: [360, 660, 1020, 1260]),
         light: "day", dark: "night")
     outFile = outOverride ?? "\(dir)/Custom-Dynamic.heic"
 } else {
@@ -131,14 +161,22 @@ if !customImages.isEmpty {
         frames: framePaths(entry),
         rising: parseSchedule(entry["rising"], "\(name) rising", ascending: true),
         setting: parseSchedule(entry["setting"], "\(name) setting", ascending: false),
+        clock: parseClock(entry["clock"], "\(name) clock"),
         light: light, dark: dark)
     outFile = outOverride ?? "\(dir)/\(name.filter { !$0.isWhitespace })-Dynamic.heic"
 }
 
 // --- Frame order in the HEIC: the light frame first, because image 0 is
 // what thumbnails and non-dynamic viewers show; then by first appearance.
+let scheduled: [String]
+if mode == "time" {
+    guard let clock = scene.clock else { fail("\(scene.name) has no clock schedule in scenes.json, so --mode time cannot build it") }
+    scheduled = clock.frames
+} else {
+    scheduled = scene.rising.frames + scene.setting.frames
+}
 var order: [String] = []
-for frame in [scene.light] + scene.rising.frames + scene.setting.frames + [scene.dark] where !order.contains(frame) {
+for frame in [scene.light] + scheduled + [scene.dark] where !order.contains(frame) {
     order.append(frame)
 }
 let unknown = order.filter { scene.frames[$0] == nil }
@@ -152,7 +190,7 @@ if !unused.isEmpty {
 // The two schedules hand over to each other at solar noon and midnight.
 // Keeping the frame the same across both handovers also means an anchor
 // from the other side of the sky can never win with a different frame.
-if scene.rising.frames.last != scene.setting.frames.first || scene.setting.frames.last != scene.rising.frames.first {
+if mode == "solar", scene.rising.frames.last != scene.setting.frames.first || scene.setting.frames.last != scene.rising.frames.first {
     fail("\(scene.name): rising must end with the frame setting starts with, and setting must end with the frame rising starts with")
 }
 
@@ -174,6 +212,18 @@ func anchors(_ schedule: Schedule, azimuth: Double, ascending: Bool) -> [[String
 }
 let solar = anchors(scene.rising, azimuth: 90, ascending: true)
     + anchors(scene.setting, azimuth: 270, ascending: false)
+
+// --- Clock entries: (fraction of the day, image index). macOS shows the
+// latest entry at or before the current time and does not look back past
+// midnight (measured on macOS 27.0.1; first reported in rainhuang0220's
+// fork), so the frame shown across midnight needs its own entry at 00:00.
+var h24: [[String: Any]] = []
+if mode == "time", let clock = scene.clock {
+    h24.append(["t": 0.0, "i": order.firstIndex(of: clock.frames[0])!])
+    for (k, minutes) in clock.thresholds.enumerated() {
+        h24.append(["t": minutes / 1440, "i": order.firstIndex(of: clock.frames[k + 1])!])
+    }
+}
 
 // --- Load the source images, error out cleanly if any are missing.
 var images: [CGImage] = []
@@ -200,20 +250,23 @@ if !missingFrames.isEmpty {
 }
 
 // --- Light/Dark appearance fallback. If a user forces Light or Dark mode
-// (overriding Auto), macOS uses these indices instead of the solar table.
+// (overriding Auto), macOS uses these indices instead of the schedule.
 let appearance: [String: Int] = [
     "l": order.firstIndex(of: scene.light)!,
     "d": order.firstIndex(of: scene.dark)!,
 ]
 
 // --- Encode the metadata as a base64 binary plist (Apple's format).
+// Only one of the two tags is written, so there is no question of which
+// one macOS would prefer.
+let tagName = mode == "time" ? "h24" : "solar"
 let plistData = try PropertyListSerialization.data(
-    fromPropertyList: ["ap": appearance, "si": solar],
+    fromPropertyList: mode == "time" ? ["ap": appearance, "ti": h24] : ["ap": appearance, "si": solar],
     format: .binary,
     options: 0)
-let solarBase64 = plistData.base64EncodedString()
+let tagBase64 = plistData.base64EncodedString()
 
-// --- Build the HEIC with apple_desktop:solar metadata on the primary image.
+// --- Build the HEIC with the apple_desktop metadata on the primary image.
 let outURL = URL(fileURLWithPath: outFile)
 try? FileManager.default.removeItem(at: outURL)
 guard let dest = CGImageDestinationCreateWithURL(
@@ -229,12 +282,12 @@ CGImageMetadataRegisterNamespaceForPrefix(
 guard let tag = CGImageMetadataTagCreate(
         "http://ns.apple.com/namespace/1.0/" as CFString,
         "apple_desktop" as CFString,
-        "solar" as CFString,
+        tagName as CFString,
         .string,
-        solarBase64 as CFString) else {
+        tagBase64 as CFString) else {
     fail("metadata tag creation failed")
 }
-CGImageMetadataSetTagWithPath(metadata, nil, "apple_desktop:solar" as CFString, tag)
+CGImageMetadataSetTagWithPath(metadata, nil, "apple_desktop:\(tagName)" as CFString, tag)
 
 CGImageDestinationAddImageAndMetadata(dest, images[0], metadata, nil)
 for img in images.dropFirst() {
@@ -246,5 +299,6 @@ guard CGImageDestinationFinalize(dest) else {
 
 let bytes = (try? FileManager.default.attributesOfItem(atPath: outFile)[.size] as? Int) ?? 0
 let mb = Double(bytes) / 1_048_576
-print(String(format: "wrote %@ (%.1f MB, %d frames: %@, %d solar anchors)",
-             outFile, mb, images.count, order.joined(separator: " "), solar.count))
+print(String(format: "wrote %@ (%.1f MB, %d frames: %@, %@)",
+             outFile, mb, images.count, order.joined(separator: " "),
+             mode == "time" ? "\(h24.count) clock entries" : "\(solar.count) solar anchors"))

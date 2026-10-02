@@ -67,6 +67,20 @@ setting ones. Each switch gets two anchors, 0.5° either side of the
 scheduled altitude, one per neighbouring frame. The switch then happens
 at that altitude regardless of latitude, season or hemisphere.
 
+## Clock tables
+
+A HEIC built with `--mode time` carries `apple_desktop:h24` instead: a
+`ti` list of (fraction of the day, frame) entries. Measured the same way
+on the same build:
+
+- macOS shows the entry with the latest time at or before now. The order
+  of the entries in the file does not matter.
+- It does not look back past midnight. With no entry at or before the
+  current time, it showed the first frame, not the previous day's last
+  entry. A table therefore needs an entry at 00:00.
+- A switch two minutes ahead happened on its own within five seconds of
+  the scheduled minute.
+
 ## Not tested
 
 - The sun in the west half (afternoon), and below the horizon.
