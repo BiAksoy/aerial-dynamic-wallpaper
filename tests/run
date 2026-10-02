@@ -146,6 +146,8 @@ expect_status 2 "install: unknown argument" "$BIN/aerial-install" --bogus
 expect_status 2 "install: unknown mode" "$BIN/aerial-install" --mode sideways
 expect_status 2 "install: --pack without a value" "$BIN/aerial-install" --pack
 expect_status 2 "live: unknown command" "$BIN/aerial-live" sideways
+expect_status 2 "set-wallpaper: no file" "$BIN/aerial-set-wallpaper"
+expect_status 1 "set-wallpaper: missing file" "$BIN/aerial-set-wallpaper" "$TMP/nope.heic"
 
 print
 if (( failures )); then print "$failures failed"; exit 1; fi

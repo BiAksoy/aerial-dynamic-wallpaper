@@ -38,8 +38,7 @@ echo "==> building ${MODE}-dynamic HEIC"
 "$BIN_DIR/aerial-build-dynamic.swift" --pack "$PACK" --mode "$MODE"
 
 echo "==> setting as desktop wallpaper"
-/usr/bin/osascript -e \
-    "tell application \"System Events\" to tell every desktop to set picture to \"$HEIC\""
+"$BIN_DIR/aerial-set-wallpaper" "$HEIC"
 
 if [[ $MODE == time ]]; then
     cat <<EOF

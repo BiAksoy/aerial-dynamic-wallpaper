@@ -56,7 +56,8 @@ Night) and **Sequoia** (Sunrise, Morning, Night). Packs live in
    schedule in `scenes.json`.
 
 3. `aerial-install` chains the two and then sets the HEIC as the desktop
-   wallpaper via AppleScript. macOS handles the rotation from there.
+   wallpaper with `aerial-set-wallpaper`. macOS handles the rotation from
+   there.
 
 ## Install
 
@@ -74,17 +75,9 @@ Without `--pack`, the installer picks the newest pack in `scenes.json`
 that your Mac's aerial manifest contains: Golden Gate on macOS 27, Tahoe
 on macOS 26.
 
-### First-run permission prompt
-
-The first time `aerial-install` runs, macOS will ask the terminal for
-permission to control "System Events" (this is how the wallpaper actually
-gets set). Approve it. If you dismiss the prompt by accident, the
-wallpaper won't change — re-grant access in:
-
-> System Settings → Privacy & Security → Automation → \[your terminal] → System Events
-
-The script also works across multiple displays (it sets the wallpaper on
-every desktop, not just the primary one).
+The wallpaper is set on every connected display, for the Space that is
+showing on each. Other Spaces keep theirs unless "Show on all Spaces" is
+on in System Settings → Wallpaper.
 
 ### Verifying the build
 
@@ -153,8 +146,7 @@ bin/aerial-build-dynamic.swift \
 Then set it as your wallpaper through System Settings or:
 
 ```sh
-osascript -e \
-    'tell application "System Events" to tell every desktop to set picture to "'"$PWD/my-wallpaper.heic"'"'
+bin/aerial-set-wallpaper my-wallpaper.heic
 ```
 
 For best results use four photos of the same scene at sunrise, midday,
@@ -292,6 +284,7 @@ aerial-dynamic-wallpaper/
     ├── aerial-extract-frames.swift   # aerial clip → poster PNG
     ├── aerial-build-dynamic.swift    # PNGs → solar HEIC
     ├── aerial-inspect                # decode + print HEIC metadata
+    ├── aerial-set-wallpaper          # set an image on every display
     ├── aerial-install                # extract → build → set wallpaper
     └── aerial-live                   # sun-driven live aerial (macOS 27)
 ```
