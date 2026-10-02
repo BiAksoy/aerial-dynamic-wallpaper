@@ -4,16 +4,46 @@
 // solar (altitude, azimuth → image index) table. Use this to confirm a
 // build worked, or to debug why macOS picked the wrong frame.
 //
-// Usage: aerial-inspect <path-to-heic>
+// Usage: aerial-inspect <path-to-heic> [--timeline <lat>,<lon>] [--date YYYY-MM-DD]
+//   --timeline  Also print when each frame is shown over one day at that
+//               place (degrees, north and east positive), by applying the
+//               frame selection rule in docs/solar-selection.md to the
+//               sun's path. Works on any solar HEIC, not only ones built here.
+//   --date      Day to simulate, in this Mac's time zone (default: today).
 
 import Foundation
 import ImageIO
 
-guard CommandLine.arguments.count == 2 else {
-    FileHandle.standardError.write(Data("usage: aerial-inspect <path.heic>\n".utf8))
+func usage() -> Never {
+    FileHandle.standardError.write(Data(
+        "usage: aerial-inspect <path.heic> [--timeline <lat>,<lon>] [--date YYYY-MM-DD]\n".utf8))
     exit(2)
 }
-let path = CommandLine.arguments[1]
+
+var pathArg: String? = nil
+var place: (latitude: Double, longitude: Double)? = nil
+var day = Date()
+var args = Array(CommandLine.arguments.dropFirst())
+while !args.isEmpty {
+    switch args.removeFirst() {
+    case "--timeline":
+        guard !args.isEmpty else { usage() }
+        let parts = args.removeFirst().split(separator: ",").map { Double($0.trimmingCharacters(in: .whitespaces)) }
+        guard parts.count == 2, let latitude = parts[0], let longitude = parts[1],
+              abs(latitude) <= 90, abs(longitude) <= 180 else { usage() }
+        place = (latitude, longitude)
+    case "--date":
+        let format = DateFormatter()
+        format.dateFormat = "yyyy-MM-dd"
+        guard !args.isEmpty, let parsed = format.date(from: args.removeFirst()) else { usage() }
+        day = parsed
+    case let other where !other.hasPrefix("--") && pathArg == nil:
+        pathArg = other
+    default:
+        usage()
+    }
+}
+guard let path = pathArg else { usage() }
 guard FileManager.default.fileExists(atPath: path) else {
     FileHandle.standardError.write(Data("not found: \(path)\n".utf8))
     exit(1)
@@ -53,6 +83,8 @@ if let ap = plist["ap"] as? [String: Int] {
     print("appear: (no ap block)")
 }
 
+struct Anchor { let altitude: Double; let azimuth: Double; let frame: Int }
+var anchors: [Anchor] = []
 if let si = plist["si"] as? [[String: Any]] {
     print("solar:  \(si.count) anchors  (alt°, az°  →  frame)")
     for entry in si {
@@ -60,7 +92,65 @@ if let si = plist["si"] as? [[String: Any]] {
         let z = (entry["z"] as? NSNumber)?.doubleValue ?? .nan
         let i = (entry["i"] as? NSNumber)?.intValue ?? -1
         print(String(format: "        a=%6.1f  z=%6.1f  →  %d", a, z, i))
+        anchors.append(Anchor(altitude: a, azimuth: z, frame: i))
     }
 } else {
     print("solar:  (no si block)")
+}
+
+guard let place else { exit(0) }
+guard !anchors.isEmpty else {
+    FileHandle.standardError.write(Data("--timeline needs a solar table\n".utf8))
+    exit(1)
+}
+
+// --- Sun altitude and azimuth (degrees, azimuth clockwise from north),
+// from the Astronomical Almanac's low-precision formulas. No refraction,
+// so times near the horizon can be a few minutes off.
+let rad = Double.pi / 180
+func sunPosition(at date: Date) -> (altitude: Double, azimuth: Double) {
+    let n = date.timeIntervalSince1970 / 86400 - 10957.5   // days since J2000.0
+    let meanLongitude = 280.460 + 0.9856474 * n
+    let anomaly = (357.528 + 0.9856003 * n) * rad
+    let lambda = (meanLongitude + 1.915 * sin(anomaly) + 0.020 * sin(2 * anomaly)) * rad
+    let obliquity = (23.439 - 0.0000004 * n) * rad
+    let rightAscension = atan2(cos(obliquity) * sin(lambda), cos(lambda))
+    let declination = asin(sin(obliquity) * sin(lambda))
+    let siderealHours = 18.697374558 + 24.06570982441908 * n
+    let hourAngle = (siderealHours * 15 + place.longitude) * rad - rightAscension
+    let latitude = place.latitude * rad
+    let altitude = asin(sin(latitude) * sin(declination) + cos(latitude) * cos(declination) * cos(hourAngle))
+    let azimuth = atan2(-sin(hourAngle), tan(declination) * cos(latitude) - sin(latitude) * cos(hourAngle))
+    return (altitude / rad, (azimuth / rad + 360).truncatingRemainder(dividingBy: 360))
+}
+
+// --- The frame macOS shows for a sun position (docs/solar-selection.md).
+func frame(altitude: Double, azimuth: Double) -> Int {
+    func score(_ anchor: Anchor) -> Double {
+        if (anchor.azimuth > 180) == (azimuth > 180) { return abs(anchor.altitude - altitude) }
+        let cosine = sin(anchor.altitude * rad) * sin(altitude * rad)
+            + cos(anchor.altitude * rad) * cos(altitude * rad) * cos((anchor.azimuth - azimuth) * rad)
+        return acos(max(-1, min(1, cosine))) / rad
+    }
+    let ranked = anchors.sorted { score($0) < score($1) }
+    return (ranked.first { abs($0.azimuth - azimuth) < 180 } ?? ranked[0]).frame
+}
+
+let calendar = Calendar.current
+let midnight = calendar.startOfDay(for: day)
+let clock = DateFormatter()
+clock.dateFormat = "HH:mm"
+let dayLabel = DateFormatter()
+dayLabel.dateFormat = "yyyy-MM-dd"
+print(String(format: "timeline: %@ at %.2f, %.2f  (times in %@)",
+             dayLabel.string(from: midnight), place.latitude, place.longitude, TimeZone.current.identifier))
+var shown: Int? = nil
+for minute in 0..<1440 {
+    let moment = midnight.addingTimeInterval(Double(minute) * 60)
+    let sun = sunPosition(at: moment)
+    let now = frame(altitude: sun.altitude, azimuth: sun.azimuth)
+    if now != shown {
+        print(String(format: "        %@  frame %d   (sun %5.1f°)", clock.string(from: moment), now, sun.altitude))
+        shown = now
+    }
 }

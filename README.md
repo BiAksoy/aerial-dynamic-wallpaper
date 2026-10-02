@@ -93,6 +93,28 @@ bin/aerial-inspect ~/Pictures/AerialWallpapers/GoldenGate-Dynamic.heic
 It prints the frame count and dimensions, the light/dark appearance
 mapping, and the full solar (altitude, azimuth → frame) table.
 
+To see when each frame will be on screen, give it a place (latitude,
+longitude in degrees) and optionally a date:
+
+```sh
+bin/aerial-inspect ~/Pictures/AerialWallpapers/GoldenGate-Dynamic.heic \
+    --timeline 41.01,28.98 --date 2026-12-21
+```
+
+```
+timeline: 2026-12-21 at 41.01, 28.98  (times in Europe/Istanbul)
+        00:00  frame 1   (sun -68.2°)
+        08:13  frame 0   (sun  -2.9°)
+        16:27  frame 2   (sun  10.0°)
+        17:40  frame 3   (sun  -1.0°)
+        18:28  frame 1   (sun  -9.1°)
+```
+
+This works on any solar HEIC, including ones made with other tools, so
+it is also a way to find out why a dynamic wallpaper switches when it
+does. Times are within a few minutes; the simulation ignores atmospheric
+refraction.
+
 ### Other aerial packs
 
 ```sh
