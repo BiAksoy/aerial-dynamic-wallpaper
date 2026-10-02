@@ -1,5 +1,5 @@
 #!/bin/zsh
-# Re-extracts poster frames from the aerial cache, rebuilds the
+# Re-extracts the pack's poster frames, rebuilds the
 # solar-dynamic HEIC, and sets it as the desktop wallpaper. After this
 # runs once, macOS rotates the wallpaper natively based on the sun's
 # position at your current location — no daemon, no cron.
@@ -8,8 +8,6 @@
 #   --pack    Pack name from scenes.json (e.g. "Golden Gate", Tahoe,
 #             Sequoia). Default: the newest pack in scenes.json that this
 #             Mac's aerial manifest contains.
-#
-# Re-run any time you (re)download aerial variants in System Settings.
 
 set -euo pipefail
 
@@ -25,7 +23,7 @@ BIN_DIR="${0:A:h}"
 [[ -n $PACK ]] || PACK=$("$BIN_DIR/aerial-extract-frames.swift" --default-pack)
 HEIC="$HOME/Pictures/AerialWallpapers/${PACK// /}-Dynamic.heic"
 
-echo "==> extracting poster frames from aerial cache (pack: $PACK)"
+echo "==> extracting poster frames (pack: $PACK)"
 "$BIN_DIR/aerial-extract-frames.swift" --pack "$PACK"
 
 echo "==> building solar-dynamic HEIC"

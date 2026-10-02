@@ -5,6 +5,10 @@
 // aerial manifest, so the script keeps working if Apple republishes a
 // pack with new IDs.
 //
+// A clip that macOS has already downloaded is read from the local aerial
+// cache. Otherwise the one frame is read from the clip's URL in the
+// manifest, which fetches a few megabytes instead of the whole video.
+//
 // Usage: aerial-extract-frames [--pack <Name>] [--default-pack]
 //   --pack          Pack name from scenes.json (e.g. "Golden Gate").
 //                   Default: the first pack in scenes.json whose clips
@@ -55,9 +59,9 @@ let scenes: [Scene] = scenesJSON.compactMap {
     return Scene(name: name, clips: clips)
 }
 
-// --- Map shotID → asset UUID from the aerial manifest. Clips are matched
-// by shotID because accessibilityLabel is not a dependable name: on
-// macOS 27.0 two of the Golden Gate labels are raw file names.
+// --- Map shotID → asset (UUID, URL) from the aerial manifest. Clips are
+// matched by shotID because accessibilityLabel is not a dependable name:
+// on macOS 27.0 two of the Golden Gate labels are raw file names.
 guard let manifestData = FileManager.default.contents(atPath: manifestPath) else {
     fail("manifest not found at \(manifestPath). Does this Mac have Apple's aerial wallpapers (macOS Tahoe or newer)?")
 }
@@ -65,10 +69,11 @@ guard let root = try? JSONSerialization.jsonObject(with: manifestData) as? [Stri
       let assets = root["assets"] as? [[String: Any]] else {
     fail("manifest shape unexpected — Apple may have changed the format")
 }
-var uuidByShotID: [String: String] = [:]
+struct Clip { let uuid: String; let remote: URL? }
+var clipByShotID: [String: Clip] = [:]
 for asset in assets {
     if let shotID = asset["shotID"] as? String, let id = asset["id"] as? String {
-        uuidByShotID[shotID] = id
+        clipByShotID[shotID] = Clip(uuid: id, remote: (asset["url-4K-SDR-240FPS"] as? String).flatMap(URL.init(string:)))
     }
 }
 
@@ -80,7 +85,7 @@ if let requestedPack {
     }
     scene = match
 } else {
-    guard let match = scenes.first(where: { $0.clips.values.allSatisfy { uuidByShotID[$0] != nil } }) else {
+    guard let match = scenes.first(where: { $0.clips.values.allSatisfy { clipByShotID[$0] != nil } }) else {
         fail("none of the packs in scenes.json (\(scenes.map(\.name).joined(separator: ", "))) is in this Mac's aerial manifest")
     }
     scene = match
@@ -89,7 +94,7 @@ if printDefaultPack {
     print(scene.name); exit(0)
 }
 
-let missing = scene.clips.values.filter { uuidByShotID[$0] == nil }.sorted()
+let missing = scene.clips.values.filter { clipByShotID[$0] == nil }.sorted()
 if !missing.isEmpty {
     fail("pack \"\(scene.name)\" is not in this Mac's aerial manifest (missing: \(missing.joined(separator: ", ")))")
 }
@@ -99,18 +104,24 @@ try? FileManager.default.createDirectory(atPath: outDir, withIntermediateDirecto
 let posterAt = CMTime(seconds: 5.0, preferredTimescale: 600)
 let filePrefix = scene.name.lowercased().filter { !$0.isWhitespace }
 
+var failed: [String] = []
 for (frame, shotID) in scene.clips.sorted(by: { $0.key < $1.key }) {
-    let movPath = "\(aerialsDir)/\(uuidByShotID[shotID]!).mov"
+    let clip = clipByShotID[shotID]!
     let outPath = "\(outDir)/\(filePrefix)-\(frame).png"
 
-    guard FileManager.default.fileExists(atPath: movPath) else {
-        FileHandle.standardError.write(Data(
-            "skip \(frame): not downloaded — open System Settings → Wallpaper and click the cloud-arrow on \(scene.name) \(frame.capitalized)\n".utf8))
-        continue
+    let local = URL(fileURLWithPath: "\(aerialsDir)/\(clip.uuid).mov")
+    let source: URL
+    if FileManager.default.fileExists(atPath: local.path) {
+        source = local
+    } else if let remote = clip.remote {
+        print("\(frame): not downloaded, reading one frame from \(remote.host ?? "the manifest URL")")
+        source = remote
+    } else {
+        FileHandle.standardError.write(Data("\(frame): not downloaded and the manifest has no URL for it\n".utf8))
+        failed.append(frame); continue
     }
 
-    let asset = AVURLAsset(url: URL(fileURLWithPath: movPath))
-    let gen = AVAssetImageGenerator(asset: asset)
+    let gen = AVAssetImageGenerator(asset: AVURLAsset(url: source))
     gen.appliesPreferredTrackTransform = true
     gen.requestedTimeToleranceBefore = .zero
     gen.requestedTimeToleranceAfter = .zero
@@ -122,17 +133,27 @@ for (frame, shotID) in scene.clips.sorted(by: { $0.key < $1.key }) {
         else { result = .failure(error ?? NSError(domain: "aerial", code: -1)) }
         sem.signal()
     }
-    sem.wait()
+    guard sem.wait(timeout: .now() + 120) == .success else {
+        gen.cancelAllCGImageGeneration()
+        FileHandle.standardError.write(Data("extract timed out for \(frame)\n".utf8))
+        failed.append(frame); continue
+    }
 
     do {
         let cgImage = try result.get()
         let rep = NSBitmapImageRep(cgImage: cgImage)
         guard let data = rep.representation(using: .png, properties: [:]) else {
-            FileHandle.standardError.write(Data("encode failed for \(frame)\n".utf8)); continue
+            FileHandle.standardError.write(Data("encode failed for \(frame)\n".utf8))
+            failed.append(frame); continue
         }
         try data.write(to: URL(fileURLWithPath: outPath))
         print("wrote \(outPath)")
     } catch {
-        FileHandle.standardError.write(Data("extract failed for \(frame): \(error)\n".utf8))
+        FileHandle.standardError.write(Data("extract failed for \(frame): \(error.localizedDescription)\n".utf8))
+        failed.append(frame)
     }
+}
+// A frame left over from an earlier run must not end up in a new build.
+if !failed.isEmpty {
+    fail("could not extract: \(failed.joined(separator: ", "))")
 }

@@ -193,13 +193,9 @@ if !missingFrames.isEmpty {
     if !customImages.isEmpty {
         fail("missing image(s): \(missingFrames.map { scene.frames[$0]! }.joined(separator: ", "))")
     }
-    let names = missingFrames.map { "\(scene.name) \($0.capitalized)" }.joined(separator: ", ")
     fail("""
         missing source frames for: \(missingFrames.joined(separator: ", "))
-
-        Open System Settings → Wallpaper, click the cloud-arrow icon to download
-        \(names), then re-run:  aerial-install --pack "\(scene.name)"
-
+        Extract them first:  aerial-extract-frames --pack "\(scene.name)"
         """)
 }
 

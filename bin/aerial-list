@@ -1,0 +1,88 @@
+#!/usr/bin/env swift
+// Lists the packs defined in ../scenes.json and whether this Mac can
+// build them, or with --all every aerial in the system manifest with its
+// shotID, which is what a new scenes.json entry needs.
+//
+// Usage: aerial-list [--all]
+
+import Foundation
+
+func fail(_ message: String, code: Int32 = 1) -> Never {
+    FileHandle.standardError.write(Data("\(message)\n".utf8)); exit(code)
+}
+
+var showAll = false
+for arg in CommandLine.arguments.dropFirst() {
+    guard arg == "--all" else { fail("usage: aerial-list [--all]", code: 2) }
+    showAll = true
+}
+
+let aerials = ("~/Library/Application Support/com.apple.wallpaper/aerials" as NSString).expandingTildeInPath
+let manifestPath = "\(aerials)/manifest/entries.json"
+guard let manifestData = FileManager.default.contents(atPath: manifestPath) else {
+    fail("manifest not found at \(manifestPath). Does this Mac have Apple's aerial wallpapers (macOS Tahoe or newer)?")
+}
+guard let root = try? JSONSerialization.jsonObject(with: manifestData) as? [String: Any],
+      let assets = root["assets"] as? [[String: Any]],
+      let categories = root["categories"] as? [[String: Any]] else {
+    fail("manifest shape unexpected — Apple may have changed the format")
+}
+
+func isDownloaded(_ asset: [String: Any]) -> Bool {
+    guard let id = asset["id"] as? String else { return false }
+    return FileManager.default.fileExists(atPath: "\(aerials)/videos/\(id).mov")
+}
+
+if !showAll {
+    let scenesURL = URL(fileURLWithPath: CommandLine.arguments[0]).resolvingSymlinksInPath()
+        .deletingLastPathComponent().deletingLastPathComponent().appendingPathComponent("scenes.json")
+    guard let data = try? Data(contentsOf: scenesURL),
+          let scenes = try? JSONSerialization.jsonObject(with: data) as? [[String: Any]] else {
+        fail("cannot read pack definitions at \(scenesURL.path)")
+    }
+    let assetByShotID = Dictionary(
+        assets.compactMap { asset in (asset["shotID"] as? String).map { ($0, asset) } },
+        uniquingKeysWith: { first, _ in first })
+    for scene in scenes {
+        guard let name = scene["name"] as? String, let clips = scene["clips"] as? [String: String] else { continue }
+        let found = clips.values.compactMap { assetByShotID[$0] }
+        let status: String
+        if found.count < clips.count {
+            status = "not in this Mac's aerial manifest"
+        } else {
+            let local = found.filter(isDownloaded).count
+            status = local == clips.count
+                ? "\(clips.count) clips, all downloaded"
+                : "\(clips.count) clips, \(local) downloaded, the rest read from Apple's server"
+        }
+        print("\(name.padding(toLength: 14, withPad: " ", startingAt: 0)) \(clips.keys.sorted().joined(separator: ", ")) (\(status))")
+    }
+    exit(0)
+}
+
+// --- Display names are not in entries.json; they live in the string table
+// that ships next to it, keyed by locale and then by "<shotID>_NAME".
+var strings: [String: String] = [:]
+let tablePath = "\(aerials)/manifest/TVIdleScreenStrings.bundle/Contents/Resources/Localizable.nocache.loctable"
+if let data = FileManager.default.contents(atPath: tablePath),
+   let table = try? PropertyListSerialization.propertyList(from: data, format: nil) as? [String: Any] {
+    let wanted = Locale.preferredLanguages.flatMap { [$0.replacingOccurrences(of: "-", with: "_"), String($0.prefix(2))] } + ["en"]
+    strings = wanted.lazy.compactMap { table[$0] as? [String: String] }.first ?? [:]
+}
+
+func order(_ item: [String: Any]) -> Int { item["preferredOrder"] as? Int ?? 0 }
+
+for category in categories.sorted(by: { order($0) < order($1) }) {
+    let subcategories = (category["subcategories"] as? [[String: Any]] ?? []).sorted { order($0) < order($1) }
+    for subcategory in subcategories {
+        guard let id = subcategory["id"] as? String else { continue }
+        let key = subcategory["localizedNameKey"] as? String ?? ""
+        print(strings[key] ?? key)
+        let members = assets.filter { ($0["subcategories"] as? [String] ?? []).contains(id) }
+        for asset in members.sorted(by: { order($0) < order($1) }) {
+            let shotID = asset["shotID"] as? String ?? "?"
+            let name = strings[asset["localizedNameKey"] as? String ?? ""] ?? asset["accessibilityLabel"] as? String ?? ""
+            print("  \(shotID.padding(toLength: 44, withPad: " ", startingAt: 0)) \(name)\(isDownloaded(asset) ? "  (downloaded)" : "")")
+        }
+    }
+}

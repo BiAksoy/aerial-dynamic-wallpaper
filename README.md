@@ -22,7 +22,8 @@ Night) and **Sequoia** (Sunrise, Morning, Night). Packs live in
 ## Requirements
 
 - macOS Tahoe (or newer) with Apple's aerial wallpapers available
-  in System Settings → Wallpaper.
+  in System Settings → Wallpaper. The videos do not need to be
+  downloaded.
 - Xcode Command Line Tools (provides `swift`). Install with:
   ```sh
   xcode-select --install
@@ -34,12 +35,14 @@ Night) and **Sequoia** (Sunrise, Morning, Night). Packs live in
 
 ## How it works
 
-1. `aerial-extract-frames.swift` finds the pack's aerial `.mov` files that
-   macOS has cached under
-   `~/Library/Application Support/com.apple.wallpaper/aerials/videos/`,
-   resolving the asset UUIDs from the live aerial manifest by the shot IDs
-   listed in `scenes.json`, and writes a poster PNG for each into
-   `~/Pictures/AerialWallpapers/`.
+1. `aerial-extract-frames.swift` looks up the pack's clips in the live
+   aerial manifest by the shot IDs listed in `scenes.json` and writes a
+   poster PNG for each into `~/Pictures/AerialWallpapers/`. A clip that
+   macOS has already cached under
+   `~/Library/Application Support/com.apple.wallpaper/aerials/videos/`
+   is read from there. Otherwise the single frame is read from the
+   clip's URL in the manifest (Apple's `sylvan.apple.com`), which
+   fetches a few megabytes instead of the 450-600 MB video.
 
 2. `aerial-build-dynamic.swift` packs the PNGs into a single HEIC at
    `~/Pictures/AerialWallpapers/<Pack>-Dynamic.heic`. It attaches an
@@ -54,15 +57,6 @@ Night) and **Sequoia** (Sunrise, Morning, Night). Packs live in
 ## Install
 
 ```sh
-# 1. Download the pack's variants in the GUI.
-#    Open System Settings → Wallpaper → Landscape.
-#    Click the cloud-arrow icon on each variant of the pack (for example
-#    "Golden Gate Sunset", "Golden Gate Day", "Golden Gate Evening",
-#    "Golden Gate Night") until they show the play icon (= cached
-#    locally). The build will refuse with a clear error if any of the
-#    .mov files is missing.
-
-# 2. Get the scripts and run the installer.
 git clone https://github.com/BiAksoy/aerial-dynamic-wallpaper.git
 cd aerial-dynamic-wallpaper
 bin/aerial-install
@@ -102,6 +96,7 @@ mapping, and the full solar (altitude, azimuth → frame) table.
 ### Other aerial packs
 
 ```sh
+bin/aerial-list                      # packs in scenes.json and their status
 bin/aerial-install --pack Tahoe
 bin/aerial-install --pack Sequoia
 bin/aerial-install --pack "Golden Gate"
@@ -110,7 +105,8 @@ bin/aerial-install --pack "Golden Gate"
 `--pack` takes any pack name from `scenes.json`. A pack is a list of
 frames, each tied to an Apple aerial by its `shotID` in the manifest, and
 a schedule (see [Tuning the rotation](#tuning-the-rotation)). To add one,
-copy an entry and change the shot IDs; a pack does not have to stay
+copy an entry and change the shot IDs; `bin/aerial-list --all` prints
+every aerial on your Mac with its shot ID. A pack does not have to stay
 within one place, and it can have any number of frames.
 
 Sequoia has three clips and no evening one, so its Morning frame stays up
@@ -142,7 +138,6 @@ sunset, and night. Same dimensions across all four.
 
 Re-run `aerial-install` whenever you:
 
-- (Re)download a pack variant
 - Edit a schedule in `scenes.json` (e.g. to push evening earlier or
   extend morning)
 
@@ -205,7 +200,8 @@ aerial-dynamic-wallpaper/
 ├── docs/
 │   └── solar-selection.md            # how macOS picks a frame (measured)
 └── bin/
-    ├── aerial-extract-frames.swift   # aerial .mov → poster PNG
+    ├── aerial-list                   # packs, and every aerial's shot ID
+    ├── aerial-extract-frames.swift   # aerial clip → poster PNG
     ├── aerial-build-dynamic.swift    # PNGs → solar HEIC
     ├── aerial-inspect                # decode + print HEIC metadata
     └── aerial-install                # extract → build → set wallpaper
