@@ -201,10 +201,12 @@ is the end of civil twilight (streetlights on), -12° is nautical
 twilight (properly dark). To move a switch, change its number and re-run
 `aerial-install`.
 
-Because the schedule is written in sun altitudes, it holds at any
-latitude and in either hemisphere: a switch at 10° happens whenever the
-sun is at 10° where you are. `docs/solar-selection.md` records how macOS
-picks a frame and how that was measured.
+Because the schedule is written in sun altitudes, it does not depend on
+latitude or hemisphere: a switch at 10° happens whenever the sun is at
+10° where you are. `docs/solar-selection.md` records how macOS picks a
+frame and how that was measured; the measurements were made with the sun
+above the horizon, so the twilight switches rest on the same rule
+without having been observed.
 
 The `--images` mode uses a fixed four-frame schedule defined near the top
 of `bin/aerial-build-dynamic.swift`.
@@ -258,8 +260,9 @@ extension at that copy. Things to know before using it:
   stop working with any macOS update. Checked on macOS 27.0.1.
 - While it is on, macOS does not refresh its list of aerials.
 - The pack's videos must be downloaded (System Settings → Wallpaper,
-  cloud-arrow icon), and they must all sit in one Settings group, so
+  cloud-arrow icon), and the pack must be exactly one Settings group, so
   packs mixed from different places only work as stills.
+- It will not touch a manifest override that was set up by hand.
 - A clip that is needed at more than one point of the day appears more
   than once in the pack's variant menu. The extra entries are hard links,
   not second downloads.

@@ -63,8 +63,8 @@ func restartWallpaper() {
     kill.waitUntilExit()
 }
 
-func removeLinks() {
-    for path in readState()["links"] as? [String] ?? [] where path.hasPrefix("\(aerials)/videos/") {
+func removeLinks(_ links: [String]) {
+    for path in links where path.hasPrefix("\(aerials)/videos/") {
         try? fm.removeItem(atPath: path)
     }
 }
@@ -73,9 +73,30 @@ func overridePath() -> String? {
     CFPreferencesCopyAppValue(overrideKey, domain) as? String
 }
 
+// An override or a custom manifest that has no state file next to it was
+// set up by hand (the same paths are used in guides for this), and is not
+// ours to replace or remove.
+func refuseForeignSetup() {
+    let ours = fm.fileExists(atPath: statePath)
+    if let path = overridePath(), path != customManifest || !ours {
+        fail("""
+            an aerial manifest override that aerial-live did not write is active:
+              \(path)
+            Leaving it alone. Remove it yourself first if you want aerial-live to manage this:
+              defaults delete com.apple.wallpaper.aerial AerialManifestLocalPathOverride
+              defaults delete com.apple.wallpaper.aerial AerialManifestForceLocal
+            """)
+    }
+    if !ours, fm.fileExists(atPath: customManifest) {
+        fail("\(customManifest) exists and was not written by aerial-live. Move it away first.")
+    }
+}
+
 switch command {
 case "disable":
-    removeLinks()
+    refuseForeignSetup()
+    guard fm.fileExists(atPath: statePath) else { print("live mode is not on"); exit(0) }
+    removeLinks(readState()["links"] as? [String] ?? [])
     CFPreferencesSetAppValue(overrideKey, nil, domain)
     CFPreferencesSetAppValue(forceLocalKey, nil, domain)
     CFPreferencesAppSynchronize(domain)
@@ -146,6 +167,8 @@ func parseSchedule(_ raw: Any?, _ key: String) -> Schedule {
     return Schedule(frames: frames, thresholds: thresholds)
 }
 
+refuseForeignSetup()
+
 let scenesURL = URL(fileURLWithPath: CommandLine.arguments[0]).resolvingSymlinksInPath()
     .deletingLastPathComponent().deletingLastPathComponent().appendingPathComponent("scenes.json")
 guard let scenesData = try? Data(contentsOf: scenesURL),
@@ -177,6 +200,21 @@ let pack = entry["name"] as? String ?? "?"
 let rising = parseSchedule(entry["rising"], "\(pack) rising")
 let setting = parseSchedule(entry["setting"], "\(pack) setting")
 
+// The same checks aerial-build-dynamic makes, so a schedule the still
+// build rejects is not accepted here.
+for (schedule, key, ascending) in [(rising, "rising", true), (setting, "setting", false)] {
+    for (a, b) in zip(schedule.thresholds, schedule.thresholds.dropFirst()) where (ascending ? b - a : a - b) < 1.5 {
+        fail("\(pack) \(key) altitudes must \(ascending ? "increase" : "decrease") by more than 1.5° per step")
+    }
+}
+if rising.frames.last != setting.frames.first || setting.frames.last != rising.frames.first {
+    fail("\(pack): rising must end with the frame setting starts with, and setting must end with the frame rising starts with")
+}
+let unused = clips(entry).keys.filter { !(rising.frames + setting.frames).contains($0) }.sorted()
+if !unused.isEmpty {
+    fail("\(pack): frames never shown by the schedule: \(unused.joined(separator: ", "))")
+}
+
 // --- The pack's clips must all be in the manifest, downloaded (this is
 // video, a poster frame is not enough) and in one Settings group, because
 // grouping is a property of the group.
@@ -198,6 +236,12 @@ if !notDownloaded.isEmpty {
 let groups = Set(indexByFrame.values.compactMap { (assets[$0]["subcategories"] as? [String])?.first })
 guard groups.count == 1, let group = groups.first else {
     fail("live mode needs all of a pack's clips in one System Settings group; \"\(pack)\" spans \(groups.count)")
+}
+// Grouping applies to the whole group, and a clip without an anchor
+// would sit in the grouped entry unscheduled.
+let groupSize = assets.filter { ($0["subcategories"] as? [String] ?? []).contains(group) }.count
+guard groupSize == indexByFrame.count else {
+    fail("live mode needs a pack to use every clip of its System Settings group; \"\(pack)\" uses \(indexByFrame.count) of \(groupSize)")
 }
 
 // --- Solar anchors, built like aerial-build-dynamic builds them: the
@@ -223,8 +267,7 @@ if let unknown = solar.first(where: { indexByFrame[$0.frame] == nil }) {
 // the clip's own entry; each further one on a copy of the entry with a
 // new id, whose video is a hard link to the original, so it costs no
 // disk space and nothing is downloaded twice.
-removeLinks()
-var links: [String] = []
+var planned: [(source: String, link: String)] = []
 var used: Set<String> = []
 var frameByVideo: [String: String] = [:]
 for (frame, index) in indexByFrame { frameByVideo[assets[index]["id"] as! String] = frame }
@@ -241,12 +284,10 @@ for (n, anchor) in solar.enumerated() {
     copy["shotID"] = "\(copy["shotID"] as? String ?? "CLIP")_ANCHOR\(n)"
     copy["variant"] = variant
     assets.append(copy)
-    let source = "\(aerials)/videos/\(assets[original]["id"] as! String).mov"
-    let link = "\(aerials)/videos/\(id).mov"
-    do { try fm.linkItem(atPath: source, toPath: link) } catch { fail("cannot link \(link): \(error.localizedDescription)") }
-    links.append(link)
+    planned.append(("\(aerials)/videos/\(assets[original]["id"] as! String).mov", "\(aerials)/videos/\(id).mov"))
     frameByVideo[id] = anchor.frame
 }
+let links = planned.map(\.link)
 
 for c in categories.indices {
     guard var subcategories = categories[c]["subcategories"] as? [[String: Any]] else { continue }
@@ -258,18 +299,29 @@ for c in categories.indices {
 manifest["assets"] = assets
 manifest["categories"] = categories
 
-do {
-    try fm.createDirectory(atPath: customDir, withIntermediateDirectories: true)
-    try JSONSerialization.data(withJSONObject: manifest).write(to: URL(fileURLWithPath: customManifest))
+// The state file is written before anything it lists exists, and keeps
+// the previous run's links until the new manifest has replaced the one
+// that refers to them. If a step fails, disable can still undo all of it.
+let previousLinks = readState()["links"] as? [String] ?? []
+func writeState(links: [String]) throws {
     let state: [String: Any] = [
         "pack": pack,
         "links": links,
         "videos": frameByVideo,
         "anchors": solar.map { ["altitude": $0.altitude, "azimuth": $0.azimuth, "frame": $0.frame] },
     ]
-    try JSONSerialization.data(withJSONObject: state, options: [.prettyPrinted]).write(to: URL(fileURLWithPath: statePath))
+    try JSONSerialization.data(withJSONObject: state, options: [.prettyPrinted])
+        .write(to: URL(fileURLWithPath: statePath), options: .atomic)
+}
+do {
+    try fm.createDirectory(atPath: customDir, withIntermediateDirectories: true)
+    try writeState(links: previousLinks + links)
+    for (source, link) in planned { try fm.linkItem(atPath: source, toPath: link) }
+    try JSONSerialization.data(withJSONObject: manifest).write(to: URL(fileURLWithPath: customManifest), options: .atomic)
+    removeLinks(previousLinks)
+    try writeState(links: links)
 } catch {
-    fail("cannot write \(customDir): \(error.localizedDescription)")
+    fail("enable did not finish: \(error.localizedDescription)\nRun aerial-live disable to remove what was written.")
 }
 
 CFPreferencesSetAppValue(overrideKey, customManifest as CFString, domain)

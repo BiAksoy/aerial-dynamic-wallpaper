@@ -24,6 +24,7 @@ func usage() -> Never {
 var pathArg: String? = nil
 var place: (latitude: Double, longitude: Double)? = nil
 var day = Date()
+var dateGiven = false
 var args = Array(CommandLine.arguments.dropFirst())
 while !args.isEmpty {
     switch args.removeFirst() {
@@ -34,17 +35,22 @@ while !args.isEmpty {
               abs(latitude) <= 90, abs(longitude) <= 180 else { usage() }
         place = (latitude, longitude)
     case "--date":
+        // Fixed locale and calendar, or the same string means another
+        // year on a Mac set to a non-Gregorian calendar.
         let format = DateFormatter()
+        format.locale = Locale(identifier: "en_US_POSIX")
+        format.calendar = Calendar(identifier: .gregorian)
         format.dateFormat = "yyyy-MM-dd"
-        guard !args.isEmpty, let parsed = format.date(from: args.removeFirst()) else { usage() }
+        guard !args.isEmpty, args[0].count == 10, let parsed = format.date(from: args.removeFirst()) else { usage() }
         day = parsed
+        dateGiven = true
     case let other where !other.hasPrefix("--") && pathArg == nil:
         pathArg = other
     default:
         usage()
     }
 }
-guard let path = pathArg else { usage() }
+guard let path = pathArg, place != nil || !dateGiven else { usage() }
 guard FileManager.default.fileExists(atPath: path) else {
     FileHandle.standardError.write(Data("not found: \(path)\n".utf8))
     exit(1)
@@ -146,11 +152,13 @@ func frame(altitude: Double, azimuth: Double) -> Int {
     return (ranked.first { abs($0.azimuth - azimuth) < 180 } ?? ranked[0]).frame
 }
 
-let calendar = Calendar.current
+let calendar = Calendar(identifier: .gregorian)
 let midnight = calendar.startOfDay(for: day)
 let clock = DateFormatter()
 clock.dateFormat = "HH:mm"
 let dayLabel = DateFormatter()
+dayLabel.locale = Locale(identifier: "en_US_POSIX")
+dayLabel.calendar = calendar
 dayLabel.dateFormat = "yyyy-MM-dd"
 print(String(format: "timeline: %@ at %.2f, %.2f  (times in %@)",
              dayLabel.string(from: midnight), place.latitude, place.longitude, TimeZone.current.identifier))
