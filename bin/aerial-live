@@ -1,0 +1,289 @@
+#!/usr/bin/env swift
+// Makes a pack's aerial videos one live wallpaper that macOS switches
+// with the sun. macOS 27 ships a solar scheduler for aerials but no
+// aerial is configured to use it; this writes a local copy of the aerial
+// manifest in which the pack's clips are grouped and carry solar anchors
+// built from the pack's schedule in ../scenes.json, and points the
+// aerial extension at it. Nothing runs in the background afterwards.
+//
+// It relies on two undocumented settings of the aerial extension and
+// stops macOS from updating the aerial list while it is on. `disable`
+// removes everything it wrote.
+//
+// Usage: aerial-live enable [--pack <Name>]
+//        aerial-live disable
+//        aerial-live status
+
+import Foundation
+
+func fail(_ message: String, code: Int32 = 1) -> Never {
+    FileHandle.standardError.write(Data("\(message)\n".utf8)); exit(code)
+}
+func usage() -> Never {
+    fail("usage: aerial-live enable [--pack <Name>] | disable | status", code: 2)
+}
+
+var args = Array(CommandLine.arguments.dropFirst())
+guard !args.isEmpty else { usage() }
+let command = args.removeFirst()
+var requestedPack: String? = nil
+while !args.isEmpty {
+    switch args.removeFirst() {
+    case "--pack" where command == "enable":
+        guard !args.isEmpty else { fail("--pack requires a value", code: 2) }
+        requestedPack = args.removeFirst()
+    default:
+        usage()
+    }
+}
+
+let fm = FileManager.default
+let aerials = ("~/Library/Application Support/com.apple.wallpaper/aerials" as NSString).expandingTildeInPath
+let systemManifest = "\(aerials)/manifest/entries.json"
+let customDir = "\(aerials)/custom"
+let customManifest = "\(customDir)/entries.json"
+// What enable wrote, so disable removes exactly that.
+let statePath = "\(customDir)/aerial-live.json"
+let domain = "com.apple.wallpaper.aerial" as CFString
+let overrideKey = "AerialManifestLocalPathOverride" as CFString
+let forceLocalKey = "AerialManifestForceLocal" as CFString
+
+func readState() -> [String: Any] {
+    guard let data = fm.contents(atPath: statePath),
+          let state = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return [:] }
+    return state
+}
+
+func restartWallpaper() {
+    let kill = Process()
+    kill.executableURL = URL(fileURLWithPath: "/usr/bin/killall")
+    kill.arguments = ["WallpaperAgent", "WallpaperAerialsExtension"]
+    kill.standardError = FileHandle.nullDevice
+    try? kill.run()
+    kill.waitUntilExit()
+}
+
+func removeLinks() {
+    for path in readState()["links"] as? [String] ?? [] where path.hasPrefix("\(aerials)/videos/") {
+        try? fm.removeItem(atPath: path)
+    }
+}
+
+func overridePath() -> String? {
+    CFPreferencesCopyAppValue(overrideKey, domain) as? String
+}
+
+switch command {
+case "disable":
+    removeLinks()
+    CFPreferencesSetAppValue(overrideKey, nil, domain)
+    CFPreferencesSetAppValue(forceLocalKey, nil, domain)
+    CFPreferencesAppSynchronize(domain)
+    try? fm.removeItem(atPath: customManifest)
+    try? fm.removeItem(atPath: statePath)
+    rmdir(customDir)   // leaves the directory alone if anything else is in it
+    restartWallpaper()
+    print("""
+        Live mode is off and the pack's clips are separate entries again. If
+        the grouped pack was your wallpaper, macOS now shows its first clip
+        until you choose something else in System Settings → Wallpaper.
+        """)
+    exit(0)
+
+case "status":
+    guard let path = overridePath() else { print("live mode: off"); exit(0) }
+    let state = readState()
+    print("live mode: on (\(state["pack"] as? String ?? "manifest not written by aerial-live"))")
+    print("manifest:  \(path)")
+    for anchor in state["anchors"] as? [[String: Any]] ?? [] {
+        let altitude = (anchor["altitude"] as? NSNumber)?.doubleValue ?? .nan
+        let side = (anchor["azimuth"] as? NSNumber)?.doubleValue == 90 ? "rising " : "setting"
+        print(String(format: "           %@  sun %5.1f°  →  %@", side, altitude, anchor["frame"] as? String ?? "?"))
+    }
+    // The clip on screen is the video the aerial extension holds open.
+    let lsof = Process()
+    let pipe = Pipe()
+    lsof.executableURL = URL(fileURLWithPath: "/usr/sbin/lsof")
+    lsof.arguments = ["-c", "WallpaperAerials", "-Fn"]
+    lsof.standardOutput = pipe
+    lsof.standardError = FileHandle.nullDevice
+    try? lsof.run()
+    let open = String(data: pipe.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? ""
+    lsof.waitUntilExit()
+    let videos = state["videos"] as? [String: String] ?? [:]
+    let playing = Set(open.split(separator: "\n").filter { $0.hasSuffix(".mov") }
+        .map { URL(fileURLWithPath: String($0.dropFirst())).deletingPathExtension().lastPathComponent })
+    let names = playing.map { videos[$0] ?? "a clip outside the pack" }.sorted()
+    print("playing:   \(names.isEmpty ? "no aerial (another wallpaper is set)" : names.joined(separator: ", "))")
+    exit(0)
+
+case "enable":
+    break
+
+default:
+    usage()
+}
+
+// --- enable
+
+guard ProcessInfo.processInfo.operatingSystemVersion.majorVersion >= 27 else {
+    fail("live mode needs macOS 27 or newer; on older systems use aerial-install")
+}
+
+// --- Pack definition: frames, shot IDs and the sun-altitude schedule.
+struct Schedule { let frames: [String]; let thresholds: [Double] }
+func parseSchedule(_ raw: Any?, _ key: String) -> Schedule {
+    guard let items = raw as? [Any], items.count % 2 == 1 else {
+        fail("\(key) must alternate frame names and altitudes, starting and ending with a frame")
+    }
+    var frames: [String] = []
+    var thresholds: [Double] = []
+    for (i, item) in items.enumerated() {
+        if i % 2 == 0, let frame = item as? String { frames.append(frame) }
+        else if i % 2 == 1, !(item is String), let altitude = (item as? NSNumber)?.doubleValue { thresholds.append(altitude) }
+        else { fail("\(key) must alternate frame names and altitudes, starting and ending with a frame") }
+    }
+    return Schedule(frames: frames, thresholds: thresholds)
+}
+
+let scenesURL = URL(fileURLWithPath: CommandLine.arguments[0]).resolvingSymlinksInPath()
+    .deletingLastPathComponent().deletingLastPathComponent().appendingPathComponent("scenes.json")
+guard let scenesData = try? Data(contentsOf: scenesURL),
+      let scenes = try? JSONSerialization.jsonObject(with: scenesData) as? [[String: Any]] else {
+    fail("cannot read pack definitions at \(scenesURL.path)")
+}
+guard let manifestData = fm.contents(atPath: systemManifest),
+      var manifest = try? JSONSerialization.jsonObject(with: manifestData) as? [String: Any],
+      var assets = manifest["assets"] as? [[String: Any]],
+      var categories = manifest["categories"] as? [[String: Any]] else {
+    fail("cannot read the aerial manifest at \(systemManifest)")
+}
+func assetIndex(_ shotID: String) -> Int? { assets.firstIndex { $0["shotID"] as? String == shotID } }
+
+func clips(_ entry: [String: Any]) -> [String: String] { entry["clips"] as? [String: String] ?? [:] }
+let entry: [String: Any]
+if let requestedPack {
+    guard let match = scenes.first(where: { $0["name"] as? String == requestedPack }) else {
+        fail("unknown pack \"\(requestedPack)\". Packs in scenes.json: \(scenes.compactMap { $0["name"] as? String }.joined(separator: ", "))")
+    }
+    entry = match
+} else {
+    guard let match = scenes.first(where: { clips($0).values.allSatisfy { assetIndex($0) != nil } }) else {
+        fail("none of the packs in scenes.json is in this Mac's aerial manifest")
+    }
+    entry = match
+}
+let pack = entry["name"] as? String ?? "?"
+let rising = parseSchedule(entry["rising"], "\(pack) rising")
+let setting = parseSchedule(entry["setting"], "\(pack) setting")
+
+// --- The pack's clips must all be in the manifest, downloaded (this is
+// video, a poster frame is not enough) and in one Settings group, because
+// grouping is a property of the group.
+var indexByFrame: [String: Int] = [:]
+var notDownloaded: [String] = []
+for (frame, shotID) in clips(entry) {
+    guard let index = assetIndex(shotID), let id = assets[index]["id"] as? String else {
+        fail("pack \"\(pack)\" is not in this Mac's aerial manifest (missing: \(shotID))")
+    }
+    indexByFrame[frame] = index
+    if !fm.fileExists(atPath: "\(aerials)/videos/\(id).mov") { notDownloaded.append("\(pack) \(frame.capitalized)") }
+}
+if !notDownloaded.isEmpty {
+    fail("""
+        live mode plays the videos, and these are not downloaded: \(notDownloaded.sorted().joined(separator: ", "))
+        Download them in System Settings → Wallpaper (cloud-arrow icon), then run this again.
+        """)
+}
+let groups = Set(indexByFrame.values.compactMap { (assets[$0]["subcategories"] as? [String])?.first })
+guard groups.count == 1, let group = groups.first else {
+    fail("live mode needs all of a pack's clips in one System Settings group; \"\(pack)\" spans \(groups.count)")
+}
+
+// --- Solar anchors, built like aerial-build-dynamic builds them: the
+// aerial scheduler scores anchors the way the still-image one does
+// (docs/solar-selection.md), so each switch gets an anchor 0.5° either
+// side of it, rising ones at azimuth 90° and setting ones at 270°.
+struct Anchor { let altitude: Double; let azimuth: Double; let frame: String }
+func anchors(_ schedule: Schedule, azimuth: Double, ascending: Bool) -> [Anchor] {
+    if schedule.thresholds.isEmpty { return [Anchor(altitude: 0, azimuth: azimuth, frame: schedule.frames[0])] }
+    let step = ascending ? 0.5 : -0.5
+    return schedule.thresholds.enumerated().flatMap { k, altitude in
+        [Anchor(altitude: altitude - step, azimuth: azimuth, frame: schedule.frames[k]),
+         Anchor(altitude: altitude + step, azimuth: azimuth, frame: schedule.frames[k + 1])]
+    }
+}
+let solar = anchors(rising, azimuth: 90, ascending: true) + anchors(setting, azimuth: 270, ascending: false)
+if let unknown = solar.first(where: { indexByFrame[$0.frame] == nil }) {
+    fail("\(pack): schedule uses a frame the pack does not define: \(unknown.frame)")
+}
+
+// --- A manifest entry holds one anchor, and most frames need several
+// (Night before dawn and after dusk, for one). The first anchor goes on
+// the clip's own entry; each further one on a copy of the entry with a
+// new id, whose video is a hard link to the original, so it costs no
+// disk space and nothing is downloaded twice.
+removeLinks()
+var links: [String] = []
+var used: Set<String> = []
+var frameByVideo: [String: String] = [:]
+for (frame, index) in indexByFrame { frameByVideo[assets[index]["id"] as! String] = frame }
+for (n, anchor) in solar.enumerated() {
+    let original = indexByFrame[anchor.frame]!
+    let variant: [String: Any] = ["solar": ["altitude": anchor.altitude, "azimuth": anchor.azimuth]]
+    if used.insert(anchor.frame).inserted {
+        assets[original]["variant"] = variant
+        continue
+    }
+    var copy = assets[original]
+    let id = UUID().uuidString
+    copy["id"] = id
+    copy["shotID"] = "\(copy["shotID"] as? String ?? "CLIP")_ANCHOR\(n)"
+    copy["variant"] = variant
+    assets.append(copy)
+    let source = "\(aerials)/videos/\(assets[original]["id"] as! String).mov"
+    let link = "\(aerials)/videos/\(id).mov"
+    do { try fm.linkItem(atPath: source, toPath: link) } catch { fail("cannot link \(link): \(error.localizedDescription)") }
+    links.append(link)
+    frameByVideo[id] = anchor.frame
+}
+
+for c in categories.indices {
+    guard var subcategories = categories[c]["subcategories"] as? [[String: Any]] else { continue }
+    for s in subcategories.indices where subcategories[s]["id"] as? String == group {
+        subcategories[s]["combineVariants"] = true
+    }
+    categories[c]["subcategories"] = subcategories
+}
+manifest["assets"] = assets
+manifest["categories"] = categories
+
+do {
+    try fm.createDirectory(atPath: customDir, withIntermediateDirectories: true)
+    try JSONSerialization.data(withJSONObject: manifest).write(to: URL(fileURLWithPath: customManifest))
+    let state: [String: Any] = [
+        "pack": pack,
+        "links": links,
+        "videos": frameByVideo,
+        "anchors": solar.map { ["altitude": $0.altitude, "azimuth": $0.azimuth, "frame": $0.frame] },
+    ]
+    try JSONSerialization.data(withJSONObject: state, options: [.prettyPrinted]).write(to: URL(fileURLWithPath: statePath))
+} catch {
+    fail("cannot write \(customDir): \(error.localizedDescription)")
+}
+
+CFPreferencesSetAppValue(overrideKey, customManifest as CFString, domain)
+CFPreferencesSetAppValue(forceLocalKey, kCFBooleanTrue, domain)
+CFPreferencesAppSynchronize(domain)
+restartWallpaper()
+
+print("""
+    Live mode is on for \(pack) (\(solar.count) anchors, \(links.count) linked copies).
+
+    One step is left, in System Settings → Wallpaper: choose \(pack), which is
+    now a single entry, and pick Automatic from its menu. If Automatic is
+    already shown, pick another variant first and then Automatic again:
+    until a choice is made macOS keeps playing a single clip.
+
+    Check with:  aerial-live status      Undo with:  aerial-live disable
+    """)

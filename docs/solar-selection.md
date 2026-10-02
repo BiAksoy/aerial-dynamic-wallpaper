@@ -101,6 +101,26 @@ on the same build:
 - A switch two minutes ahead happened on its own within five seconds of
   the scheduled minute.
 
+## Aerial videos
+
+`bin/aerial-live` uses the aerial extension's own scheduler, which reads
+one `variant.solar` anchor per manifest entry. Measured on the same
+build with the four Golden Gate clips:
+
+- With anchors that made one clip the clear winner, that clip played,
+  and after swapping the anchors the other clip played. Which clip had
+  the lowest `preferredOrder` made no difference.
+- A switch placed a few minutes ahead happened on its own, about a
+  minute from the predicted time, also when the target was a copied
+  entry whose video is a hard link.
+- The scheduler used the same sun position as the still wallpapers did
+  at that moment (the fallback described above).
+- The grouped entry shows Automatic in System Settings before any choice
+  is stored. Until one is, the stored choice stays `default` and a single
+  clip plays. Picking another variant and then Automatic stores provider
+  `com.apple.wallpaper.choice.aerials` with the group's id and the option
+  `aerialVariant = automatic`, and from then on the anchors decide.
+
 ## Not tested
 
 - The sun below the horizon.

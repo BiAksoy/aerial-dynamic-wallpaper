@@ -232,9 +232,45 @@ is shown across midnight. `--mode time` also works with `--images`
 The clock mode comes from
 [rainhuang0220's fork](https://github.com/rainhuang0220/aerial-dynamic-wallpaper).
 
+## Live video mode (macOS 27, experimental)
+
+`aerial-install` produces a still wallpaper. On macOS 27 a pack can also
+stay a live aerial, with the slow-motion video on the lock screen, and
+still follow the sun: the aerial extension contains a solar scheduler
+that no shipped aerial is configured to use.
+
+```sh
+bin/aerial-live enable        # or: enable --pack Tahoe
+# Then, in System Settings → Wallpaper, choose the pack (now a single
+# entry) and pick Automatic from its menu. If Automatic is already
+# shown, pick another variant first and then Automatic again.
+bin/aerial-live status        # schedule, and the clip on screen now
+bin/aerial-live disable       # removes everything enable wrote
+```
+
+`enable` writes a copy of the aerial manifest in which the pack's clips
+are grouped and carry solar anchors generated from the same `rising` and
+`setting` schedules the still wallpaper uses, then points the aerial
+extension at that copy. Things to know before using it:
+
+- It depends on two undocumented settings of the aerial extension
+  (`AerialManifestLocalPathOverride`, `AerialManifestForceLocal`) and can
+  stop working with any macOS update. Checked on macOS 27.0.1.
+- While it is on, macOS does not refresh its list of aerials.
+- The pack's videos must be downloaded (System Settings → Wallpaper,
+  cloud-arrow icon), and they must all sit in one Settings group, so
+  packs mixed from different places only work as stills.
+- A clip that is needed at more than one point of the day appears more
+  than once in the pack's variant menu. The extra entries are hard links,
+  not second downloads.
+
+The scheduler and the two settings were worked out by
+[pdfux](https://gist.github.com/pdfux/5659724021e584313c00b843312e909d).
+
 ## Uninstall
 
 ```sh
+# If live mode is on:  bin/aerial-live disable
 # Restore an Apple wallpaper from System Settings → Wallpaper.
 # Then delete the generated files and the clone:
 rm -rf ~/Pictures/AerialWallpapers
@@ -253,7 +289,8 @@ aerial-dynamic-wallpaper/
     ├── aerial-extract-frames.swift   # aerial clip → poster PNG
     ├── aerial-build-dynamic.swift    # PNGs → solar HEIC
     ├── aerial-inspect                # decode + print HEIC metadata
-    └── aerial-install                # extract → build → set wallpaper
+    ├── aerial-install                # extract → build → set wallpaper
+    └── aerial-live                   # sun-driven live aerial (macOS 27)
 ```
 
 ## Reference
