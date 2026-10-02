@@ -42,7 +42,13 @@ Each row is one test HEIC. The sun was at about altitude 40°, azimuth
 
 The build script's own output was then tested the same way: probe packs
 with a schedule switch placed 1.5° to 2° above or below the sun's
-altitude showed the frame the schedule promised in every case.
+altitude showed the frame the schedule promised in every case, with the
+sun in the east half (rising schedule) and later in the west half
+(setting schedule).
+
+`aerial-inspect --timeline` implements the rule. Its prediction for the
+current minute matched the frame on screen for four hand-typed tables
+(8 to 14 anchors at mixed azimuths), once with the sun in each half.
 
 The rule matches what
 [pdfux's notes](https://gist.github.com/pdfux/5659724021e584313c00b843312e909d)
@@ -57,6 +63,20 @@ describe for the scheduler of macOS 27's aerial video wallpapers.
   appearance set to Auto.
 - A wallpaper set with `NSWorkspace.setDesktopImageURL` behaved as a
   dynamic wallpaper straight away, on both attached displays.
+
+## Which location macOS uses
+
+During the first tests the sun altitude macOS used (read off a ladder of
+anchors 0.5° apart) was within 0.2° of the value computed for the Mac's
+actual region. After `WallpaperAgent` was restarted, the same ladder
+showed the sun about 40° higher, matching the sun as seen from latitude
+0° at the time zone's standard meridian (longitude 15° × UTC offset), and
+it stayed that way for at least half an hour. Location Services was on
+throughout. What triggers the switch back was not established.
+
+Under that fallback the sun rises near 06:00 and sets near 18:00 standard
+time all year and passes almost overhead, so a schedule still produces a
+plausible day, only not the local one.
 
 ## How the build script uses it
 
@@ -83,6 +103,6 @@ on the same build:
 
 ## Not tested
 
-- The sun in the west half (afternoon), and below the horizon.
+- The sun below the horizon.
 - Dark appearance, and the Light and Dark choices in System Settings.
 - macOS 26.

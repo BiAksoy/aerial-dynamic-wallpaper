@@ -56,6 +56,7 @@ For travel-aware behavior, ensure Location Services is enabled:
   System Settings → Privacy & Security → Location Services → ON
   …→ System Services (bottom) → "Setting Time Zone": ON
 
-If location is off, macOS falls back to the time zone's representative location
-— still works, just less precise than Wi-Fi geolocation.
+If macOS has no location, it places the sun as seen from the equator at
+your time zone's meridian: the frames still rotate, with sunrise and
+sunset near 06:00 and 18:00 all year.
 EOF

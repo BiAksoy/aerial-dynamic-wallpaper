@@ -32,6 +32,10 @@ Night) and **Sequoia** (Sunrise, Morning, Night). Packs live in
 - Location Services enabled for "Setting Time Zone" / "System Customization"
   (recommended, for travel-aware rotation):
   System Settings → Privacy & Security → Location Services → System Services.
+  When macOS has no location it places the sun as seen from the equator
+  at your time zone's meridian, so the frames still rotate, with sunrise
+  and sunset near 06:00 and 18:00 all year (see
+  `docs/solar-selection.md`).
 
 ## How it works
 
