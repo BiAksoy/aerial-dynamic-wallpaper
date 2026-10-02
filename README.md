@@ -57,7 +57,8 @@ Night) and **Sequoia** (Sunrise, Morning, Night). Packs live in
 
 3. `aerial-install` chains the two and then sets the HEIC as the desktop
    wallpaper with `aerial-set-wallpaper`. macOS handles the rotation from
-   there.
+   there. It removes the poster PNGs once the HEIC is built;
+   pass `--keep-frames` to keep them.
 
 ## Install
 
