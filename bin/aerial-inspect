@@ -3,21 +3,32 @@
 // per-frame dimensions, the appearance (light/dark) block, and the full
 // solar (altitude, azimuth → image index) table, or the clock table of a
 // HEIC built with --mode time. Use this to confirm a
-// build worked, or to debug why macOS picked the wrong frame.
-//
-// Usage: aerial-inspect <path-to-heic> [--timeline <lat>,<lon>] [--date YYYY-MM-DD]
-//   --timeline  Also print when each frame is shown over one day at that
-//               place (degrees, north and east positive), by applying the
-//               frame selection rule in docs/solar-selection.md to the
-//               sun's path. Works on any solar HEIC, not only ones built here.
-//   --date      Day to simulate, in this Mac's time zone (default: today).
+// build worked, or to debug why macOS picked the wrong frame. The
+// timeline applies the frame selection rule in docs/solar-selection.md
+// to the sun's path.
 
 import Foundation
 import ImageIO
 
+let help = """
+    Show what is inside a dynamic HEIC: its frames, the light and dark
+    frames, and its solar or clock table.
+
+    Usage: aerial-inspect <file.heic> [--timeline <lat>,<lon> [--date <YYYY-MM-DD>]]
+
+      --timeline <lat>,<lon>   Also print when each frame is on screen over one
+                               day at that place (degrees; north and east are
+                               positive). Works on any solar HEIC.
+      --date <YYYY-MM-DD>      The day to simulate, in this Mac's time zone.
+                               Default: today.
+      -h, --help               Show this help.
+
+    Example: aerial-inspect ~/Pictures/AerialWallpapers/Tahoe-Dynamic.heic --timeline 41.01,28.98
+    """
+
 func usage() -> Never {
     FileHandle.standardError.write(Data(
-        "usage: aerial-inspect <path.heic> [--timeline <lat>,<lon>] [--date YYYY-MM-DD]\n".utf8))
+        "usage: aerial-inspect <file.heic> [--timeline <lat>,<lon> [--date <YYYY-MM-DD>]] (see --help)\n".utf8))
     exit(2)
 }
 
@@ -44,7 +55,9 @@ while !args.isEmpty {
         guard !args.isEmpty, args[0].count == 10, let parsed = format.date(from: args.removeFirst()) else { usage() }
         day = parsed
         dateGiven = true
-    case let other where !other.hasPrefix("--") && pathArg == nil:
+    case "-h", "--help":
+        print(help); exit(0)
+    case let other where !other.hasPrefix("-") && pathArg == nil:
         pathArg = other
     default:
         usage()

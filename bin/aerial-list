@@ -2,8 +2,6 @@
 // Lists the packs defined in ../scenes.json and whether this Mac can
 // build them, or with --all every aerial in the system manifest with its
 // shotID, which is what a new scenes.json entry needs.
-//
-// Usage: aerial-list [--all]
 
 import Foundation
 
@@ -11,10 +9,24 @@ func fail(_ message: String, code: Int32 = 1) -> Never {
     FileHandle.standardError.write(Data("\(message)\n".utf8)); exit(code)
 }
 
+let help = """
+    List the packs in scenes.json and whether this Mac can build them.
+
+    Usage: aerial-list [--all]
+
+      --all        List every aerial in this Mac's manifest instead, grouped
+                   as in System Settings, with the shot ID a scenes.json
+                   entry refers to.
+      -h, --help   Show this help.
+    """
+
 var showAll = false
 for arg in CommandLine.arguments.dropFirst() {
-    guard arg == "--all" else { fail("usage: aerial-list [--all]", code: 2) }
-    showAll = true
+    switch arg {
+    case "--all": showAll = true
+    case "-h", "--help": print(help); exit(0)
+    default: fail("unknown argument: \(arg) (see --help)", code: 2)
+    }
 }
 
 let aerials = ("~/Library/Application Support/com.apple.wallpaper/aerials" as NSString).expandingTildeInPath

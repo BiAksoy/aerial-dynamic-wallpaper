@@ -9,21 +9,40 @@
 // It relies on two undocumented settings of the aerial extension and
 // stops macOS from updating the aerial list while it is on. `disable`
 // removes everything it wrote.
-//
-// Usage: aerial-live enable [--pack <Name>]
-//        aerial-live disable
-//        aerial-live status
 
 import Foundation
 
 func fail(_ message: String, code: Int32 = 1) -> Never {
     FileHandle.standardError.write(Data("\(message)\n".utf8)); exit(code)
 }
+let help = """
+    Keep a pack as a live aerial wallpaper that macOS switches with the sun
+    (macOS 27 or newer). Experimental: it relies on undocumented settings of
+    the aerial extension, and macOS stops updating its aerial list while it
+    is on.
+
+    Usage: aerial-live enable [--pack <name>]
+           aerial-live status
+           aerial-live disable
+
+      enable           Group the pack's clips into one System Settings entry
+                       and give them the pack's schedule. Restarts the
+                       wallpaper processes. Afterwards choose the pack in
+                       System Settings → Wallpaper and pick Automatic.
+      status           Show whether live mode is on, the schedule, and the
+                       clip playing now.
+      disable          Remove everything enable wrote.
+      --pack <name>    Pack from scenes.json. Default: the first pack whose
+                       clips are all in this Mac's aerial manifest.
+      -h, --help       Show this help.
+    """
+
 func usage() -> Never {
-    fail("usage: aerial-live enable [--pack <Name>] | disable | status", code: 2)
+    fail("usage: aerial-live enable [--pack <name>] | status | disable (see --help)", code: 2)
 }
 
 var args = Array(CommandLine.arguments.dropFirst())
+if args.contains(where: { $0 == "-h" || $0 == "--help" }) { print(help); exit(0) }
 guard !args.isEmpty else { usage() }
 let command = args.removeFirst()
 var requestedPack: String? = nil

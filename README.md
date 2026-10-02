@@ -39,7 +39,7 @@ Night) and **Sequoia** (Sunrise, Morning, Night). Packs live in
 
 ## How it works
 
-1. `aerial-extract-frames.swift` looks up the pack's clips in the live
+1. `aerial-extract-frames` looks up the pack's clips in the live
    aerial manifest by the shot IDs listed in `scenes.json` and writes a
    poster PNG for each into `~/Pictures/AerialWallpapers/`. A clip that
    macOS has already cached under
@@ -48,7 +48,7 @@ Night) and **Sequoia** (Sunrise, Morning, Night). Packs live in
    clip's URL in the manifest (Apple's `sylvan.apple.com`), which
    fetches a few megabytes instead of the 450-600 MB video.
 
-2. `aerial-build-dynamic.swift` packs the PNGs into a single HEIC at
+2. `aerial-build-dynamic` packs the PNGs into a single HEIC at
    `~/Pictures/AerialWallpapers/<Pack>-Dynamic.heic`. It attaches an
    `apple_desktop:solar` metadata block — a base64-encoded plist mapping
    each frame to sun (altitude, azimuth) anchors and light/dark
@@ -70,7 +70,10 @@ bin/aerial-install
 
 That's it. The installer prints what it's doing and which file it produced.
 On success, your wallpaper is now the dynamic HEIC and macOS will rotate
-through the frames as the sun moves.
+through the frames as the sun moves. To build the file without changing
+your wallpaper, add `--no-set`.
+
+Every command prints its options with `--help`.
 
 Without `--pack`, the installer picks the newest pack in `scenes.json`
 that your Mac's aerial manifest contains: Golden Gate on macOS 27, Tahoe
@@ -139,7 +142,7 @@ four images you supply — they don't have to come from an Apple aerial
 pack:
 
 ```sh
-bin/aerial-build-dynamic.swift \
+bin/aerial-build-dynamic \
     --images morning.png day.png evening.png night.png \
     --out my-wallpaper.heic
 ```
@@ -202,7 +205,7 @@ above the horizon, so the twilight switches rest on the same rule
 without having been observed.
 
 The `--images` mode uses a fixed four-frame schedule defined near the top
-of `bin/aerial-build-dynamic.swift`.
+of `bin/aerial-build-dynamic`.
 
 ### Fixed clock times
 
@@ -278,17 +281,34 @@ rm -rf ~/Pictures/AerialWallpapers
 aerial-dynamic-wallpaper/
 ├── README.md
 ├── scenes.json                       # packs: frames, shot IDs, schedules
+├── tests/run                         # checks that need no aerial videos
 ├── docs/
 │   └── solar-selection.md            # how macOS picks a frame (measured)
 └── bin/
     ├── aerial-list                   # packs, and every aerial's shot ID
-    ├── aerial-extract-frames.swift   # aerial clip → poster PNG
-    ├── aerial-build-dynamic.swift    # PNGs → solar HEIC
+    ├── aerial-extract-frames         # aerial clip → poster PNG
+    ├── aerial-build-dynamic          # PNGs → dynamic HEIC
     ├── aerial-inspect                # decode + print HEIC metadata
     ├── aerial-set-wallpaper          # set an image on every display
     ├── aerial-install                # extract → build → set wallpaper
     └── aerial-live                   # sun-driven live aerial (macOS 27)
 ```
+
+`aerial-extract-frames` and `aerial-build-dynamic` used to end in
+`.swift`; the old names remain as links.
+
+## Tests
+
+```sh
+tests/run
+```
+
+This checks everything that does not need Apple's videos: the generated
+solar and clock tables, the timeline simulation, every pack in
+`scenes.json`, rejected schedules and argument handling. It works in a
+temporary directory and never sets the wallpaper. What macOS does with
+the files cannot be tested this way; `docs/solar-selection.md` records
+how that was measured.
 
 ## Reference
 

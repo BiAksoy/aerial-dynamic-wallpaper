@@ -45,7 +45,7 @@ sips -z 64 64 "$TMP/pixel.png" --out "$TMP/frame.png" >/dev/null
 IMAGES=("$TMP/frame.png" "$TMP/frame.png" "$TMP/frame.png" "$TMP/frame.png")
 
 print "== solar table from the default schedule"
-expect_status 0 "build --images" "$BIN/aerial-build-dynamic.swift" --images $IMAGES --out "$TMP/solar.heic"
+expect_status 0 "build --images" "$BIN/aerial-build-dynamic" --images $IMAGES --out "$TMP/solar.heic"
 inspect="$("$BIN/aerial-inspect" "$TMP/solar.heic")"
 expect_line "four frames" '^frames: 4$' "$inspect"
 expect_line "light is frame 0, dark is frame 1" 'light → frame 0, dark → frame 1' "$inspect"
@@ -78,7 +78,7 @@ south="$(TZ=UTC "$BIN/aerial-inspect" "$TMP/solar.heic" --timeline -33.9,0 --dat
 [[ $south == "1 2 0 3 1 " ]] && pass "same order in the southern hemisphere" || fail "southern hemisphere order was: $south"
 
 print "== clock table"
-expect_status 0 "build --images --mode time" "$BIN/aerial-build-dynamic.swift" --images $IMAGES --mode time --out "$TMP/clock.heic"
+expect_status 0 "build --images --mode time" "$BIN/aerial-build-dynamic" --images $IMAGES --mode time --out "$TMP/clock.heic"
 inspect="$("$BIN/aerial-inspect" "$TMP/clock.heic")"
 expect_line "midnight entry for the frame shown across it" '00:00  →  1' "$inspect"
 expect_line "06:00 morning" '06:00  →  2' "$inspect"
@@ -95,8 +95,8 @@ while name="$(plutil -extract "$n.name" raw "$ROOT/scenes.json" 2>/dev/null)"; d
     for frame in ${(f)"$(plutil -extract "$n.clips" raw "$ROOT/scenes.json")"}; do
         cp "$TMP/frame.png" "$FRAMES/$prefix-$frame.png"
     done
-    expect_status 0 "$name, solar" "$BIN/aerial-build-dynamic.swift" --pack "$name"
-    expect_status 0 "$name, time" "$BIN/aerial-build-dynamic.swift" --pack "$name" --mode time --out "$TMP/pack-clock.heic"
+    expect_status 0 "$name, solar" "$BIN/aerial-build-dynamic" --pack "$name"
+    expect_status 0 "$name, time" "$BIN/aerial-build-dynamic" --pack "$name" --mode time --out "$TMP/pack-clock.heic"
     (( n += 1 ))
 done
 (( n > 0 )) && pass "$n packs found" || fail "no packs found in scenes.json"
@@ -105,17 +105,17 @@ print "== schedules that cannot work are rejected"
 # The scripts read scenes.json from next to bin/, so a copy of bin/ with
 # its own scenes.json tests a schedule without touching the real file.
 mkdir -p "$TMP/alt/bin"
-cp "$BIN/aerial-build-dynamic.swift" "$TMP/alt/bin/"
+cp "$BIN/aerial-build-dynamic" "$TMP/alt/bin/"
 for frame in day night; do cp "$TMP/frame.png" "$FRAMES/probe-$frame.png"; done
 reject() {   # reject <description> <rising> <setting> [clock]
     local clock=${4:+, \"clock\": $4}
     print "[{\"name\": \"Probe\", \"clips\": {\"day\": \"X\", \"night\": \"Y\"}, \"rising\": $2, \"setting\": $3$clock, \"light\": \"day\", \"dark\": \"night\"}]" \
         > "$TMP/alt/scenes.json"
-    expect_status 1 "$1" "$TMP/alt/bin/aerial-build-dynamic.swift" --pack Probe --mode ${4:+time}${4:-solar} --out "$TMP/probe.heic"
+    expect_status 1 "$1" "$TMP/alt/bin/aerial-build-dynamic" --pack Probe --mode ${4:+time}${4:-solar} --out "$TMP/probe.heic"
 }
 GOOD_R='["night", -3, "day"]'; GOOD_S='["day", 3, "night"]'
 print "[{\"name\": \"Probe\", \"clips\": {\"day\": \"X\", \"night\": \"Y\"}, \"rising\": $GOOD_R, \"setting\": $GOOD_S, \"light\": \"day\", \"dark\": \"night\"}]" > "$TMP/alt/scenes.json"
-expect_status 0 "a valid two-frame pack builds" "$TMP/alt/bin/aerial-build-dynamic.swift" --pack Probe --out "$TMP/probe.heic"
+expect_status 0 "a valid two-frame pack builds" "$TMP/alt/bin/aerial-build-dynamic" --pack Probe --out "$TMP/probe.heic"
 reject "rising altitudes that do not increase" '["night", 5, "day", -3, "night", 20, "day"]' "$GOOD_S"
 reject "setting altitudes closer than the anchors allow" "$GOOD_R" '["day", 3, "night", 2.5, "day", -9, "night"]'
 reject "rising that does not hand over to setting" "$GOOD_R" '["night", 3, "day"]'
@@ -123,19 +123,19 @@ reject "a frame the pack does not define" '["night", -3, "dusk"]' '["dusk", 3, "
 reject "a clip the schedule never shows" '["night"]' '["night"]'
 reject "a schedule that does not alternate frames and altitudes" '["night", "day"]' "$GOOD_S"
 print "[{\"name\": \"Probe\", \"clips\": {\"day\": \"X\", \"night\": \"Y\"}, \"rising\": $GOOD_R, \"setting\": $GOOD_S, \"clock\": [\"night\", \"18:00\", \"day\", \"06:00\", \"night\"], \"light\": \"day\", \"dark\": \"night\"}]" > "$TMP/alt/scenes.json"
-expect_status 1 "clock times that do not increase" "$TMP/alt/bin/aerial-build-dynamic.swift" --pack Probe --mode time --out "$TMP/probe.heic"
+expect_status 1 "clock times that do not increase" "$TMP/alt/bin/aerial-build-dynamic" --pack Probe --mode time --out "$TMP/probe.heic"
 print "[{\"name\": \"Probe\", \"clips\": {\"day\": \"X\", \"night\": \"Y\"}, \"rising\": $GOOD_R, \"setting\": $GOOD_S, \"clock\": [\"night\", \"06:00\", \"day\"], \"light\": \"day\", \"dark\": \"night\"}]" > "$TMP/alt/scenes.json"
-expect_status 1 "a clock that does not return to its first frame" "$TMP/alt/bin/aerial-build-dynamic.swift" --pack Probe --mode time --out "$TMP/probe.heic"
+expect_status 1 "a clock that does not return to its first frame" "$TMP/alt/bin/aerial-build-dynamic" --pack Probe --mode time --out "$TMP/probe.heic"
 print "[{\"name\": \"Probe\", \"clips\": {\"day\": \"X\", \"night\": \"Y\"}, \"rising\": $GOOD_R, \"setting\": $GOOD_S, \"light\": \"day\", \"dark\": \"night\"}]" > "$TMP/alt/scenes.json"
-expect_status 1 "--mode time for a pack without a clock" "$TMP/alt/bin/aerial-build-dynamic.swift" --pack Probe --mode time --out "$TMP/probe.heic"
+expect_status 1 "--mode time for a pack without a clock" "$TMP/alt/bin/aerial-build-dynamic" --pack Probe --mode time --out "$TMP/probe.heic"
 
 print "== arguments"
-expect_status 2 "build: unknown argument" "$BIN/aerial-build-dynamic.swift" --bogus
-expect_status 2 "build: unknown mode" "$BIN/aerial-build-dynamic.swift" --images $IMAGES --mode sideways
-expect_status 2 "build: --images needs four paths" "$BIN/aerial-build-dynamic.swift" --images "$TMP/frame.png"
-expect_status 1 "build: unknown pack" "$BIN/aerial-build-dynamic.swift" --pack Atlantis
-expect_status 1 "build: missing image" "$BIN/aerial-build-dynamic.swift" --images $IMAGES[1,3] "$TMP/nope.png" --out "$TMP/x.heic"
-expect_status 2 "extract: unknown argument" "$BIN/aerial-extract-frames.swift" --bogus
+expect_status 2 "build: unknown argument" "$BIN/aerial-build-dynamic" --bogus
+expect_status 2 "build: unknown mode" "$BIN/aerial-build-dynamic" --images $IMAGES --mode sideways
+expect_status 2 "build: --images needs four paths" "$BIN/aerial-build-dynamic" --images "$TMP/frame.png"
+expect_status 1 "build: unknown pack" "$BIN/aerial-build-dynamic" --pack Atlantis
+expect_status 1 "build: missing image" "$BIN/aerial-build-dynamic" --images $IMAGES[1,3] "$TMP/nope.png" --out "$TMP/x.heic"
+expect_status 2 "extract: unknown argument" "$BIN/aerial-extract-frames" --bogus
 expect_status 2 "inspect: no file" "$BIN/aerial-inspect"
 expect_status 2 "inspect: --date without --timeline" "$BIN/aerial-inspect" "$TMP/solar.heic" --date 2026-03-20
 expect_status 2 "inspect: malformed date" "$BIN/aerial-inspect" "$TMP/solar.heic" --timeline 0,0 --date 26-3-20
@@ -148,6 +148,14 @@ expect_status 2 "install: --pack without a value" "$BIN/aerial-install" --pack
 expect_status 2 "live: unknown command" "$BIN/aerial-live" sideways
 expect_status 2 "set-wallpaper: no file" "$BIN/aerial-set-wallpaper"
 expect_status 1 "set-wallpaper: missing file" "$BIN/aerial-set-wallpaper" "$TMP/nope.heic"
+
+print "== help, and the commands' old names"
+for command in aerial-list aerial-extract-frames aerial-build-dynamic aerial-inspect aerial-set-wallpaper aerial-install aerial-live; do
+    expect_status 0 "$command --help" "$BIN/$command" --help
+    expect_line "$command --help shows its usage" '^Usage: '"$command" "$(<"$TMP/out")"
+done
+expect_status 0 "aerial-build-dynamic.swift still runs" "$BIN/aerial-build-dynamic.swift" --images $IMAGES --out "$TMP/old-name.heic"
+expect_status 0 "aerial-extract-frames.swift still runs" "$BIN/aerial-extract-frames.swift" -h
 
 print
 if (( failures )); then print "$failures failed"; exit 1; fi

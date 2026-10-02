@@ -3,7 +3,7 @@
 Apple does not document this. The rule below was measured on macOS 27.0.1
 (26A434) on 2 October 2026 by setting solid-colour test HEICs as the
 wallpaper with `NSWorkspace.setDesktopImageURL` and reading back which
-frame was on screen. `bin/aerial-build-dynamic.swift` relies on it.
+frame was on screen. `bin/aerial-build-dynamic` relies on it.
 
 ## The rule
 

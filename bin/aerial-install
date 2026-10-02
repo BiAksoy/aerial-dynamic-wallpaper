@@ -3,22 +3,33 @@
 # solar-dynamic HEIC, and sets it as the desktop wallpaper. After this
 # runs once, macOS rotates the wallpaper natively based on the sun's
 # position at your current location — no daemon, no cron.
-#
-# Usage: aerial-install [--pack <Name>] [--mode solar|time] [--keep-frames]
-#   --pack    Pack name from scenes.json (e.g. "Golden Gate", Tahoe,
-#             Sequoia). Default: the newest pack in scenes.json that this
-#             Mac's aerial manifest contains.
-#   --mode    solar (default) follows the sun. time switches frames at
-#             the pack's fixed clock times instead.
-#   --keep-frames
-#             Keep the extracted poster PNGs next to the HEIC. They are
-#             removed otherwise.
 
 set -euo pipefail
+
+usage() {
+    cat <<'EOF'
+Build a dynamic wallpaper from an Apple aerial pack and set it as the
+desktop wallpaper. macOS then switches its frames by itself.
+
+Usage: aerial-install [--pack <name>] [--mode solar|time] [--keep-frames] [--no-set]
+
+  --pack <name>   Pack from scenes.json: "Golden Gate", Tahoe, Sequoia.
+                  Default: the newest pack this Mac's aerial manifest
+                  contains. aerial-list shows them.
+  --mode <mode>   solar (default) follows the sun; time switches at the
+                  pack's fixed clock times.
+  --keep-frames   Keep the extracted poster PNGs next to the HEIC.
+  --no-set        Build the HEIC but leave the current wallpaper alone.
+  -h, --help      Show this help.
+
+Example: aerial-install --pack Tahoe --mode time
+EOF
+}
 
 PACK=""
 MODE="solar"
 KEEP_FRAMES=0
+SET_WALLPAPER=1
 while (( $# > 0 )); do
     case $1 in
         --pack|--mode)
@@ -26,28 +37,36 @@ while (( $# > 0 )); do
             [[ $1 == --pack ]] && PACK=$2 || MODE=$2
             shift 2 ;;
         --keep-frames) KEEP_FRAMES=1; shift ;;
-        *) print -u2 "unknown argument: $1"; exit 2 ;;
+        --no-set) SET_WALLPAPER=0; shift ;;
+        -h|--help) usage; exit 0 ;;
+        *) print -u2 -- "unknown argument: $1 (see --help)"; exit 2 ;;
     esac
 done
 # Checked here so a typo does not cost a full extraction first.
 [[ $MODE == solar || $MODE == time ]] || { print -u2 "unknown --mode $MODE (use solar or time)"; exit 2 }
 
 BIN_DIR="${0:A:h}"
-[[ -n $PACK ]] || PACK=$("$BIN_DIR/aerial-extract-frames.swift" --default-pack)
+[[ -n $PACK ]] || PACK=$("$BIN_DIR/aerial-extract-frames" --default-pack)
 HEIC="$HOME/Pictures/AerialWallpapers/${PACK// /}-Dynamic.heic"
 
 echo "==> extracting poster frames (pack: $PACK)"
 LOG="$(mktemp)"
 trap 'rm -f "$LOG"' EXIT
-"$BIN_DIR/aerial-extract-frames.swift" --pack "$PACK" | tee "$LOG"
+"$BIN_DIR/aerial-extract-frames" --pack "$PACK" | tee "$LOG"
 
 echo "==> building ${MODE}-dynamic HEIC"
-"$BIN_DIR/aerial-build-dynamic.swift" --pack "$PACK" --mode "$MODE"
+"$BIN_DIR/aerial-build-dynamic" --pack "$PACK" --mode "$MODE"
 
 # The frames are only an input to the build, and at 4K they add up to
 # about 75 MB a pack. Exactly the files this run wrote are removed.
 if (( ! KEEP_FRAMES )); then
     sed -n 's/^wrote //p' "$LOG" | while IFS= read -r frame; do rm -f -- "$frame"; done
+fi
+
+if (( ! SET_WALLPAPER )); then
+    print "\nBuilt $HEIC. The wallpaper was not changed (--no-set); set it with:"
+    print "  $BIN_DIR/aerial-set-wallpaper \"$HEIC\""
+    exit 0
 fi
 
 echo "==> setting as desktop wallpaper"

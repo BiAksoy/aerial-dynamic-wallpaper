@@ -2,8 +2,6 @@
 // Sets an image, still or dynamic, as the desktop wallpaper on every
 // display. It goes through NSWorkspace, so unlike scripting System
 // Events it needs no Automation permission.
-//
-// Usage: aerial-set-wallpaper <image>
 
 import AppKit
 import Foundation
@@ -12,7 +10,16 @@ func fail(_ message: String, code: Int32 = 1) -> Never {
     FileHandle.standardError.write(Data("\(message)\n".utf8)); exit(code)
 }
 
-guard CommandLine.arguments.count == 2 else { fail("usage: aerial-set-wallpaper <image>", code: 2) }
+let help = """
+    Set an image, still or dynamic, as the desktop wallpaper on every display.
+
+    Usage: aerial-set-wallpaper <image>
+
+      -h, --help   Show this help.
+    """
+
+if CommandLine.arguments.dropFirst().contains(where: { $0 == "-h" || $0 == "--help" }) { print(help); exit(0) }
+guard CommandLine.arguments.count == 2 else { fail("usage: aerial-set-wallpaper <image> (see --help)", code: 2) }
 let url = URL(fileURLWithPath: CommandLine.arguments[1]).standardizedFileURL
 guard FileManager.default.fileExists(atPath: url.path) else { fail("not found: \(url.path)") }
 guard !NSScreen.screens.isEmpty else { fail("no display to set a wallpaper on") }
