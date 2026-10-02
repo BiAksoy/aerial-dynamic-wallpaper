@@ -5,14 +5,15 @@
 # position at your current location — no daemon, no cron.
 #
 # Usage: aerial-install [--pack <Name>]
-#   --pack    Aerial pack name (default: Tahoe). The pack must contain
-#             four phase-named assets ("<Pack> Morning|Day|Evening|Night").
+#   --pack    Pack name from scenes.json (e.g. "Golden Gate", Tahoe,
+#             Sequoia). Default: the newest pack in scenes.json that this
+#             Mac's aerial manifest contains.
 #
 # Re-run any time you (re)download aerial variants in System Settings.
 
 set -euo pipefail
 
-PACK="Tahoe"
+PACK=""
 while (( $# > 0 )); do
     case $1 in
         --pack) PACK=$2; shift 2 ;;
@@ -21,7 +22,8 @@ while (( $# > 0 )); do
 done
 
 BIN_DIR="${0:A:h}"
-HEIC="$HOME/Pictures/AerialWallpapers/${PACK}-Dynamic.heic"
+[[ -n $PACK ]] || PACK=$("$BIN_DIR/aerial-extract-frames.swift" --default-pack)
+HEIC="$HOME/Pictures/AerialWallpapers/${PACK// /}-Dynamic.heic"
 
 echo "==> extracting poster frames from aerial cache (pack: $PACK)"
 "$BIN_DIR/aerial-extract-frames.swift" --pack "$PACK"
@@ -35,7 +37,7 @@ echo "==> setting as desktop wallpaper"
 
 cat <<EOF
 
-Done. macOS will now rotate the wallpaper based on the sun's altitude/azimuth
+Done. macOS will now rotate the wallpaper based on the sun's altitude
 at your current location.
 
 For travel-aware behavior, ensure Location Services is enabled:

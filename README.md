@@ -2,20 +2,22 @@
 
 ![Tahoe aerial wallpapers — morning, day, evening, night](docs/hero.jpg)
 
-A small toolchain for macOS Tahoe that turns Apple's separate aerial
-wallpapers (Morning / Day / Evening / Night) — or any four images you
-provide — into a single **solar-dynamic HEIC** that macOS rotates
-natively based on the current sun position at your location.
+A small toolchain for macOS Tahoe (26) and Golden Gate (27) that turns
+Apple's separate aerial wallpapers of one place at different times of
+day, or any four images you provide, into a single **solar-dynamic HEIC**
+that macOS rotates natively based on the current sun position at your
+location.
 
 No cron job, no LaunchAgent, no background process. The system reads the
 embedded `apple_desktop:solar` metadata and picks the right frame on its
 own — and because the sun position is computed from Location Services,
 the timing follows you when you travel.
 
-The default pack is **Tahoe**, the only Apple aerial pack on macOS Tahoe
-that ships all four phases. The tools also work with any future pack
-that follows the same naming convention, and `aerial-build-dynamic`
-accepts arbitrary images via `--images` for fully custom wallpapers.
+Three Apple packs are defined out of the box: **Golden Gate** (Day,
+Sunset, Evening, Night; macOS 27), **Tahoe** (Morning, Day, Evening,
+Night) and **Sequoia** (Sunrise, Morning, Night). Packs live in
+`scenes.json`, and `aerial-build-dynamic` accepts arbitrary images via
+`--images` for fully custom wallpapers.
 
 ## Requirements
 
@@ -29,21 +31,22 @@ accepts arbitrary images via `--images` for fully custom wallpapers.
 - Location Services enabled for "Setting Time Zone" / "System Customization"
   (recommended, for travel-aware rotation):
   System Settings → Privacy & Security → Location Services → System Services.
-  Without it, macOS falls back to the time zone's representative location.
 
 ## How it works
 
-1. `aerial-extract-frames.swift` finds the four aerial `.mov` files that
+1. `aerial-extract-frames.swift` finds the pack's aerial `.mov` files that
    macOS has cached under
    `~/Library/Application Support/com.apple.wallpaper/aerials/videos/`,
-   resolving the asset UUIDs by name from the live aerial manifest, and
-   writes a poster PNG for each into `~/Pictures/AerialWallpapers/`.
+   resolving the asset UUIDs from the live aerial manifest by the shot IDs
+   listed in `scenes.json`, and writes a poster PNG for each into
+   `~/Pictures/AerialWallpapers/`.
 
-2. `aerial-build-dynamic.swift` packs the four PNGs into a single HEIC at
+2. `aerial-build-dynamic.swift` packs the PNGs into a single HEIC at
    `~/Pictures/AerialWallpapers/<Pack>-Dynamic.heic`. It attaches an
    `apple_desktop:solar` metadata block — a base64-encoded plist mapping
-   each frame to representative sun (altitude, azimuth) anchors and
-   light/dark appearance fallbacks.
+   each frame to sun (altitude, azimuth) anchors and light/dark
+   appearance fallbacks. The anchors are generated from the pack's
+   schedule in `scenes.json`.
 
 3. `aerial-install` chains the two and then sets the HEIC as the desktop
    wallpaper via AppleScript. macOS handles the rotation from there.
@@ -51,20 +54,27 @@ accepts arbitrary images via `--images` for fully custom wallpapers.
 ## Install
 
 ```sh
-# 1. Download all four Tahoe variants in the GUI.
+# 1. Download the pack's variants in the GUI.
 #    Open System Settings → Wallpaper → Landscape.
-#    Click the cloud-arrow icon on each of "Tahoe Morning", "Tahoe Day",
-#    "Tahoe Evening", "Tahoe Night" until all four show the play icon
-#    (= cached locally). The build will refuse with a clear error if any
-#    of the four .mov files is missing.
+#    Click the cloud-arrow icon on each variant of the pack (for example
+#    "Golden Gate Sunset", "Golden Gate Day", "Golden Gate Evening",
+#    "Golden Gate Night") until they show the play icon (= cached
+#    locally). The build will refuse with a clear error if any of the
+#    .mov files is missing.
 
-# 2. Run the installer.
-~/development/aerial-dynamic-wallpaper/bin/aerial-install
+# 2. Get the scripts and run the installer.
+git clone https://github.com/BiAksoy/aerial-dynamic-wallpaper.git
+cd aerial-dynamic-wallpaper
+bin/aerial-install
 ```
 
 That's it. The installer prints what it's doing and which file it produced.
 On success, your wallpaper is now the dynamic HEIC and macOS will rotate
-through the four frames as the sun moves.
+through the frames as the sun moves.
+
+Without `--pack`, the installer picks the newest pack in `scenes.json`
+that your Mac's aerial manifest contains: Golden Gate on macOS 27, Tahoe
+on macOS 26.
 
 ### First-run permission prompt
 
@@ -83,8 +93,7 @@ every desktop, not just the primary one).
 To confirm the generated HEIC carries the right metadata:
 
 ```sh
-~/development/aerial-dynamic-wallpaper/bin/aerial-inspect \
-    ~/Pictures/AerialWallpapers/Tahoe-Dynamic.heic
+bin/aerial-inspect ~/Pictures/AerialWallpapers/GoldenGate-Dynamic.heic
 ```
 
 It prints the frame count and dimensions, the light/dark appearance
@@ -93,13 +102,19 @@ mapping, and the full solar (altitude, azimuth → frame) table.
 ### Other aerial packs
 
 ```sh
-~/development/aerial-dynamic-wallpaper/bin/aerial-install --pack Sequoia
+bin/aerial-install --pack Tahoe
+bin/aerial-install --pack Sequoia
+bin/aerial-install --pack "Golden Gate"
 ```
 
-The `--pack` flag works with any Apple aerial pack whose assets are
-labelled `<Pack> Morning`, `<Pack> Day`, `<Pack> Evening`, `<Pack> Night`.
-As of macOS Tahoe, only the **Tahoe** pack ships all four phases — the
-flag is forward-looking for future macOS releases.
+`--pack` takes any pack name from `scenes.json`. A pack is a list of
+frames, each tied to an Apple aerial by its `shotID` in the manifest, and
+a schedule (see [Tuning the rotation](#tuning-the-rotation)). To add one,
+copy an entry and change the shot IDs; a pack does not have to stay
+within one place, and it can have any number of frames.
+
+Sequoia has three clips and no evening one, so its Morning frame stays up
+until sunset.
 
 ### Bring your own images
 
@@ -108,7 +123,7 @@ four images you supply — they don't have to come from an Apple aerial
 pack:
 
 ```sh
-~/development/aerial-dynamic-wallpaper/bin/aerial-build-dynamic.swift \
+bin/aerial-build-dynamic.swift \
     --images morning.png day.png evening.png night.png \
     --out my-wallpaper.heic
 ```
@@ -121,54 +136,64 @@ osascript -e \
 ```
 
 For best results use four photos of the same scene at sunrise, midday,
-sunset, and night. Same dimensions across all four. The solar anchor
-table at the top of `bin/aerial-build-dynamic.swift` controls how each
-frame maps to sun positions — tune it if you want to bias a phase.
+sunset, and night. Same dimensions across all four.
 
 ## Re-running
 
 Re-run `aerial-install` whenever you:
 
-- (Re)download a Tahoe variant
-- Edit the solar anchors in `bin/aerial-build-dynamic.swift` (e.g. to push
-  evening earlier or extend morning)
-
-The build always overwrites the same HEIC path, so macOS picks up the new
-frames immediately.
+- (Re)download a pack variant
+- Edit a schedule in `scenes.json` (e.g. to push evening earlier or
+  extend morning)
 
 ## Tuning the rotation
 
-The sun-position table lives at the top of `bin/aerial-build-dynamic.swift`:
+Each pack in `scenes.json` has two schedules, written in the order the
+frames appear, with the sun altitude (in degrees above the horizon) at
+which one frame hands over to the next:
 
-```swift
-let solar: [[String: Any]] = [
-    ["a":   4.0, "z":  90.0, "i": 0],  // sunrise  → morning
-    ["a":  25.0, "z": 130.0, "i": 0],  // mid-AM   → morning
-    ["a":  60.0, "z": 180.0, "i": 1],  // noon     → day
-    ["a":  25.0, "z": 230.0, "i": 1],  // mid-PM   → day
-    ["a":   4.0, "z": 270.0, "i": 2],  // sunset   → evening
-    ["a":  -8.0, "z": 300.0, "i": 2],  // dusk     → evening
-    ["a": -40.0, "z":   0.0, "i": 3],  // midnight → night
-    ["a":  -8.0, "z":  60.0, "i": 3],  // pre-dawn → night
-]
+```json
+{
+  "name": "Golden Gate",
+  "clips": {
+    "day": "GG_A_DAY",
+    "sunset": "GG_A_SUNSET",
+    "evening": "GG_A_EVENING",
+    "night": "GG_A_NIGHT"
+  },
+  "rising": ["night", -3, "day"],
+  "setting": ["day", 10, "sunset", -1, "evening", -9, "night"],
+  "light": "day",
+  "dark": "night"
+}
 ```
 
-Each row is `(altitude°, azimuth°, image_index)`. macOS picks the row
-whose `(a, z)` is closest to the sun's current position. To bias a phase
-earlier or later, lower its altitude; to shift its compass direction,
-adjust azimuth (0° = north, 90° = east, 180° = south, 270° = west).
+`rising` covers the first half of the solar day, while the sun climbs:
+here Night stays until the sun is 3° below the horizon, then Day takes
+over. `setting` covers the second half: Day until the sun has dropped to
+10°, Sunset until it is 1° below the horizon, Evening until 9° below,
+then Night. `light` and `dark` name the frames stored as the light and
+dark appearance variants.
 
-Defaults are tuned for mid-northern latitudes (≈30–45° N). Southern
-hemisphere or polar travel still rotates correctly — transitions just
-won't line up as precisely.
+Useful reference altitudes: 0° is the horizon (sunrise and sunset), -6°
+is the end of civil twilight (streetlights on), -12° is nautical
+twilight (properly dark). To move a switch, change its number and re-run
+`aerial-install`.
+
+Because the schedule is written in sun altitudes, it holds at any
+latitude and in either hemisphere: a switch at 10° happens whenever the
+sun is at 10° where you are. `docs/solar-selection.md` records how macOS
+picks a frame and how that was measured.
+
+The `--images` mode uses a fixed four-frame schedule defined near the top
+of `bin/aerial-build-dynamic.swift`.
 
 ## Uninstall
 
 ```sh
 # Restore an Apple wallpaper from System Settings → Wallpaper.
-# Then delete the generated files:
+# Then delete the generated files and the clone:
 rm -rf ~/Pictures/AerialWallpapers
-rm -rf ~/development/aerial-dynamic-wallpaper
 ```
 
 ## Files
@@ -176,9 +201,12 @@ rm -rf ~/development/aerial-dynamic-wallpaper
 ```
 aerial-dynamic-wallpaper/
 ├── README.md
+├── scenes.json                       # packs: frames, shot IDs, schedules
+├── docs/
+│   └── solar-selection.md            # how macOS picks a frame (measured)
 └── bin/
     ├── aerial-extract-frames.swift   # aerial .mov → poster PNG
-    ├── aerial-build-dynamic.swift    # 4 PNGs → solar HEIC
+    ├── aerial-build-dynamic.swift    # PNGs → solar HEIC
     ├── aerial-inspect                # decode + print HEIC metadata
     └── aerial-install                # extract → build → set wallpaper
 ```
@@ -190,5 +218,7 @@ aerial-dynamic-wallpaper/
   [`wallpapper`](https://github.com/mczachurski/wallpapper) and
   [`Equinox`](https://github.com/rlxone/Equinox) document the format in
   more detail; this project bakes a minimal version of it directly.
-- Aerial asset UUIDs and human names are read from
+- Aerial asset UUIDs and shot IDs are read from
   `~/Library/Application Support/com.apple.wallpaper/aerials/manifest/entries.json`.
+- The Sequoia mapping follows
+  [rainhuang0220's fork](https://github.com/rainhuang0220/aerial-dynamic-wallpaper).

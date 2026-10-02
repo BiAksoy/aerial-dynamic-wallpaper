@@ -1,0 +1,40 @@
+[
+  {
+    "name": "Golden Gate",
+    "clips": {
+      "day": "GG_A_DAY",
+      "sunset": "GG_A_SUNSET",
+      "evening": "GG_A_EVENING",
+      "night": "GG_A_NIGHT"
+    },
+    "rising": ["night", -3, "day"],
+    "setting": ["day", 10, "sunset", -1, "evening", -9, "night"],
+    "light": "day",
+    "dark": "night"
+  },
+  {
+    "name": "Tahoe",
+    "clips": {
+      "morning": "TA_L_001",
+      "day": "TA_L_002",
+      "evening": "TA_D_001",
+      "night": "TA_D_002"
+    },
+    "rising": ["night", -7, "morning", 10, "day"],
+    "setting": ["day", 3, "evening", -9, "night"],
+    "light": "day",
+    "dark": "night"
+  },
+  {
+    "name": "Sequoia",
+    "clips": {
+      "sunrise": "A007_C0001",
+      "morning": "A010_C0005",
+      "night": "A018_C0002"
+    },
+    "rising": ["night", -7, "sunrise", 10, "morning"],
+    "setting": ["morning", -3, "night"],
+    "light": "morning",
+    "dark": "night"
+  }
+]
