@@ -66,13 +66,17 @@ describe for the scheduler of macOS 27's aerial video wallpapers.
 
 ## Which location macOS uses
 
-During the first tests the sun altitude macOS used (read off a ladder of
-anchors 0.5° apart) was within 0.2° of the value computed for the Mac's
-actual region. After `WallpaperAgent` was restarted, the same ladder
-showed the sun about 40° higher, matching the sun as seen from latitude
-0° at the time zone's standard meridian (longitude 15° × UTC offset), and
-it stayed that way for at least half an hour. Location Services was on
-throughout. What triggers the switch back was not established.
+Normally the sun altitude macOS used (read off a ladder of anchors 0.5°
+apart) was within 0.2° of the value computed for the Mac's actual region.
+
+For about an hour during the tests the same ladder showed the sun about
+40° higher, matching the sun as seen from latitude 0° at the time zone's
+standard meridian (longitude 15° × UTC offset). Location Services was on
+throughout, but several system location clients had stopped receiving
+location at the same time, so this looks like what macOS does when it
+has no location at all. It first showed up after a `WallpaperAgent`
+restart; repeating the restart later, on a system that had its location,
+did not bring it back. A reboot restored the real location.
 
 Under that fallback the sun rises near 06:00 and sets near 18:00 standard
 time all year and passes almost overhead, so a schedule still produces a

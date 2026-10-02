@@ -183,7 +183,7 @@ let unknown = order.filter { scene.frames[$0] == nil }
 if !unknown.isEmpty {
     fail("\(scene.name): schedule uses frames the pack does not define: \(unknown.joined(separator: ", "))")
 }
-let unused = scene.frames.keys.filter { !order.contains($0) }.sorted()
+let unused = scene.frames.keys.filter { !scheduled.contains($0) }.sorted()
 if !unused.isEmpty {
     fail("\(scene.name): frames never shown by the schedule: \(unused.joined(separator: ", "))")
 }
